@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import LessonStatusIcon from '../components/LessonStatusIcon';
-//import QuizPlayer from '../components/QuizPlayer';
+import QuizPlayer from '../components/QuizPlayer';
 import api from '../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -270,7 +270,7 @@ function ImageViewer({ url, allowDownload, title }) {
 }
 
 // ── Quiz placeholder (full QuizPlayer is a future component) ─────────────────
-function QuizPlayer({ quizId }) {
+function OGquiz({ quizId }) {
   return (
     <div className="bg-[#eef2ff] border border-[#1a24cc]/20 rounded-2xl p-8
                     flex flex-col items-center gap-3">
@@ -282,7 +282,7 @@ function QuizPlayer({ quizId }) {
       </svg>
       <p className="font-semibold text-[#1a24cc]">Quiz</p>
       <p className="text-sm text-gray-500">Quiz ID: {quizId}</p>
-      <p className="text-xs text-gray-400">(Full quiz player — coming soon)</p>
+      <p className="text-xs text-gray-400"><QuizPlayer quizId={quizId}/></p>
     </div>
   );
 }
@@ -309,7 +309,7 @@ function LessonContent({ lesson, quiz, enrollmentId, onQuizComplete }) {
       );
     case 'quiz':
       return quiz
-        ? <QuizPlayer quizId={quiz.id} enrollmentId={enrollmentId} onQuizComplete={onQuizComplete} />
+        ? <OGquiz quizId={quiz.id} enrollmentId={enrollmentId} onQuizComplete={onQuizComplete} />
         : <p className="text-gray-400 text-sm">No quiz linked to this lesson.</p>;
     default:
       return (
