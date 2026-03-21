@@ -71,7 +71,15 @@ export default function LessonPlayerPage() {
     queryKey: ['lesson-detail', lessonId],
     queryFn: async () => {
       const res = await axios.get(`/lessons/${lessonId}`);
-      return res.data?.data?.lesson || res.data?.lesson || res.data;
+      const raw = res.data?.data?.lesson || res.data?.lesson || res.data;
+      return {
+        ...raw,
+        type: raw?.type || raw?.lessonType,
+        videoUrl: raw?.videoUrl || raw?.video_url || null,
+        fileUrl: raw?.fileUrl || raw?.file_url || null,
+        allowDownload: raw?.allowDownload ?? raw?.allow_download ?? false,
+        quizId: raw?.quizId || raw?.quiz_id || raw?.quiz?.id || null,
+      };
     },
   });
 
@@ -136,6 +144,11 @@ export default function LessonPlayerPage() {
   };
 
   const handleNext = async () => {
+    if (contentType === 'quiz' && !completedIds.has(lessonId)) {
+      toast.error('Pass the quiz first to continue');
+      return;
+    }
+
     await completeLessonMutation.mutateAsync(lessonId);
     if (nextLesson?.id) {
       handleNavigateLesson(nextLesson.id);
@@ -154,7 +167,7 @@ export default function LessonPlayerPage() {
     );
   }
 
-  const contentType = (currentLesson?.type || '').toLowerCase();
+  const contentType = String(currentLesson?.type || currentLesson?.lessonType || '').toLowerCase();
   const attachments = currentLesson?.attachments || [];
 
   return (
@@ -278,7 +291,7 @@ export default function LessonPlayerPage() {
         ) : null}
 
         <main className="flex-1 overflow-y-auto bg-[#F4F5FF]">
-          <div className="max-w-4xl mx-auto my-6 px-4">
+          <div className="max-w-4xl mx-auto my-6 px-4 pb-24">
             <div className="mb-6">
               <h2 className="text-2xl font-bold font-plus-jakarta-sans text-gray-900">
                 {currentLesson?.title || 'Lesson'}
@@ -296,7 +309,7 @@ export default function LessonPlayerPage() {
               {contentType === 'video' ? (
                 <div className="aspect-video rounded-xl overflow-hidden bg-black">
                   <ReactPlayer
-                    url={currentLesson?.video_url || currentLesson?.videoUrl}
+                    url={currentLesson?.videoUrl || currentLesson?.video_url}
                     width="100%"
                     height="100%"
                     controls
@@ -307,15 +320,15 @@ export default function LessonPlayerPage() {
               {contentType === 'document' ? (
                 <div>
                   <iframe
-                    src={currentLesson?.file_url || currentLesson?.fileUrl}
+                    src={currentLesson?.fileUrl || currentLesson?.file_url}
                     title="Document Viewer"
                     width="100%"
                     height="600"
                     className="border border-gray-200 rounded-xl bg-white"
                   />
-                  {currentLesson?.allow_download || currentLesson?.allowDownload ? (
+                  {currentLesson?.allowDownload || currentLesson?.allow_download ? (
                     <a
-                      href={currentLesson?.file_url || currentLesson?.fileUrl}
+                      href={currentLesson?.fileUrl || currentLesson?.file_url}
                       download
                       className="inline-block mt-3 px-4 py-2 rounded-lg border border-[#2D31D4] text-[#2D31D4] text-sm font-medium"
                     >
@@ -328,13 +341,13 @@ export default function LessonPlayerPage() {
               {contentType === 'image' ? (
                 <div>
                   <img
-                    src={currentLesson?.image_url || currentLesson?.imageUrl || currentLesson?.file_url || currentLesson?.fileUrl}
+                    src={currentLesson?.imageUrl || currentLesson?.image_url || currentLesson?.fileUrl || currentLesson?.file_url}
                     alt={currentLesson?.title || 'Lesson image'}
                     className="max-h-[70vh] mx-auto rounded-xl object-contain"
                   />
-                  {currentLesson?.allow_download || currentLesson?.allowDownload ? (
+                  {currentLesson?.allowDownload || currentLesson?.allow_download ? (
                     <a
-                      href={currentLesson?.image_url || currentLesson?.imageUrl || currentLesson?.file_url || currentLesson?.fileUrl}
+                      href={currentLesson?.imageUrl || currentLesson?.image_url || currentLesson?.fileUrl || currentLesson?.file_url}
                       download
                       className="inline-block mt-3 px-4 py-2 rounded-lg border border-[#2D31D4] text-[#2D31D4] text-sm font-medium"
                     >
@@ -346,10 +359,10 @@ export default function LessonPlayerPage() {
 
               {contentType === 'quiz' ? (
                 <QuizPlayer
-                  quizId={currentLesson?.quiz_id || currentLesson?.quizId}
+                  quizId={currentLesson?.quizId || currentLesson?.quiz_id}
                   courseId={courseId}
                   onComplete={async () => {
-                    await completeLessonMutation.mutateAsync(lessonId);
+                    queryClient.invalidateQueries({ queryKey: ['course-progress', courseId] });
                     toast.success('Quiz marked complete');
                   }}
                 />
@@ -394,7 +407,7 @@ export default function LessonPlayerPage() {
           <button
             type="button"
             onClick={handleNext}
-            disabled={completeLessonMutation.isPending}
+            disabled={completeLessonMutation.isPending || (contentType === 'quiz' && !completedIds.has(lessonId))}
             className="px-4 py-2 rounded-lg bg-[#2D31D4] text-white text-sm font-medium disabled:opacity-70 inline-flex items-center gap-2"
           >
             {completeLessonMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

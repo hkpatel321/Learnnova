@@ -53,16 +53,19 @@ router.post(
   '/quizzes/:id/questions',
   requireRole('instructor', 'admin'),
   [
-    body('questionText')
-      .trim()
-      .notEmpty()
-      .withMessage('Question text is required'),
     body('options')
+      .optional()
       .isArray({ min: 2 })
       .withMessage('At least 2 options are required'),
-    body('options.*.optionText')
-      .trim()
-      .notEmpty()
+    body('options.*')
+      .optional()
+      .custom((opt) => {
+        const text = opt?.optionText ?? opt?.option_text;
+        if (typeof text !== 'string' || !text.trim()) {
+          throw new Error('Option text is required');
+        }
+        return true;
+      })
       .withMessage('Option text is required'),
   ],
   validate,

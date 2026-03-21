@@ -38,7 +38,15 @@ const getQuizzesByCourse = async (req, res, next) => {
 
     const quizzes = await prisma.quiz.findMany({
       where: { courseId },
-      include: { _count: { select: { questions: true } } },
+      include: {
+        _count: { select: { questions: true } },
+        questions: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            options: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -200,11 +208,15 @@ const addQuestion = async (req, res, next) => {
       return res.status(access.status).json({ success: false, message: access.error });
     }
 
-    const questionText = req.body.questionText || 'New Question';
-    const options = req.body.options || [
+    const questionText = (req.body.questionText || req.body.question_text || 'New Question').trim();
+    const rawOptions = req.body.options || [
       { optionText: 'Option 1', isCorrect: true },
       { optionText: 'Option 2', isCorrect: false }
     ];
+    const options = rawOptions.map((o) => ({
+      optionText: (o.optionText || o.option_text || '').trim(),
+      isCorrect: !!(o.isCorrect ?? o.is_correct),
+    }));
 
     // Validate options
     if (!Array.isArray(options) || options.length < 2) {
@@ -274,7 +286,14 @@ const updateQuestion = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access forbidden' });
     }
 
-    const { questionText, options } = req.body;
+    const questionText = req.body.questionText ?? req.body.question_text;
+    const rawOptions = req.body.options;
+    const options = Array.isArray(rawOptions)
+      ? rawOptions.map((o) => ({
+          optionText: (o.optionText || o.option_text || '').trim(),
+          isCorrect: !!(o.isCorrect ?? o.is_correct),
+        }))
+      : undefined;
 
     // Validate new options if provided
     if (options) {
@@ -297,10 +316,10 @@ const updateQuestion = async (req, res, next) => {
     // Transaction: update question text + replace all options
     const updated = await prisma.$transaction(async (tx) => {
       // Update question text if provided
-      if (questionText) {
+      if (questionText !== undefined) {
         await tx.quizQuestion.update({
           where: { id: req.params.id },
-          data: { questionText },
+          data: { questionText: String(questionText).trim() },
         });
       }
 

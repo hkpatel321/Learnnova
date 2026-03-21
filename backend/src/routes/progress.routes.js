@@ -24,6 +24,12 @@ router.get(
   progressController.getCourseProgress
 );
 
+// POST /api/progress/courses/:courseId/complete
+router.post(
+  '/progress/courses/:courseId/complete',
+  progressController.completeCourse
+);
+
 // ── Quiz Attempts ────────────────────────────────────────────────
 
 // GET /api/quiz-attempts/:quizId/start

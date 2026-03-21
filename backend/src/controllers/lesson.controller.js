@@ -46,13 +46,14 @@ const getLessonsByCourse = async (req, res, next) => {
       where: { courseId },
       include: {
         _count: { select: { attachments: true } },
+        quiz: { select: { id: true } },
       },
       orderBy: { sortOrder: 'asc' },
     });
 
     const data = lessons.map((l) => {
       const { _count, ...rest } = l;
-      return { ...rest, attachmentCount: _count.attachments };
+      return { ...rest, attachmentCount: _count.attachments, quizId: l.quiz?.id || null };
     });
 
     return res.json({ success: true, data: { lessons: data } });
@@ -89,18 +90,42 @@ const createLesson = async (req, res, next) => {
     });
     const sortOrder = (maxSort._max.sortOrder ?? 0) + 1;
 
-    const lesson = await prisma.lesson.create({
-      data: {
-        courseId,
-        title,
-        lessonType: lessonType || req.body.type || 'video',
-        description: description || null,
-        videoUrl: videoUrl || null,
-        durationMins: durationMins ? parseInt(durationMins, 10) : (req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null),
-        allowDownload: allowDownload || false,
-        responsibleId: responsibleId || null,
-        sortOrder,
-      },
+    const effectiveLessonType = lessonType || req.body.type || 'video';
+    const requestedQuizId = req.body.quizId || null;
+
+    const lesson = await prisma.$transaction(async (tx) => {
+      const createdLesson = await tx.lesson.create({
+        data: {
+          courseId,
+          title,
+          lessonType: effectiveLessonType,
+          description: description || null,
+          videoUrl: videoUrl || null,
+          durationMins: durationMins ? parseInt(durationMins, 10) : (req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null),
+          allowDownload: allowDownload || false,
+          responsibleId: responsibleId || null,
+          sortOrder,
+        },
+      });
+
+      if (effectiveLessonType === 'quiz' && requestedQuizId) {
+        const linked = await tx.quiz.updateMany({
+          where: { id: requestedQuizId, courseId },
+          data: { lessonId: createdLesson.id },
+        });
+
+        if (linked.count === 0) {
+          throw new Error('Selected quiz not found for this course');
+        }
+      }
+
+      return createdLesson;
+    });
+
+    // If new content is added, previously completed learners must resume the course.
+    await prisma.enrollment.updateMany({
+      where: { courseId, status: 'completed' },
+      data: { status: 'in_progress', completedAt: null },
     });
 
     return res.status(201).json({ success: true, data: { lesson } });
@@ -156,9 +181,43 @@ const updateLesson = async (req, res, next) => {
       data.fileUrl = `/uploads/${req.file.filename}`;
     }
 
-    const updated = await prisma.lesson.update({
-      where: { id: req.params.id },
-      data,
+    const requestedQuizId = req.body.quizId;
+    const nextLessonType = data.lessonType || access.lesson.lessonType;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedLesson = await tx.lesson.update({
+        where: { id: req.params.id },
+        data,
+      });
+
+      // If lesson is no longer quiz, unlink any quiz tied to it.
+      if (nextLessonType !== 'quiz') {
+        await tx.quiz.updateMany({
+          where: { lessonId: req.params.id },
+          data: { lessonId: null },
+        });
+      }
+
+      // If client explicitly sends quizId, update linkage for this quiz lesson.
+      if (requestedQuizId !== undefined) {
+        await tx.quiz.updateMany({
+          where: { lessonId: req.params.id },
+          data: { lessonId: null },
+        });
+
+        if (requestedQuizId) {
+          const linked = await tx.quiz.updateMany({
+            where: { id: requestedQuizId, courseId: access.lesson.courseId },
+            data: { lessonId: req.params.id },
+          });
+
+          if (linked.count === 0) {
+            throw new Error('Selected quiz not found for this course');
+          }
+        }
+      }
+
+      return updatedLesson;
     });
 
     return res.json({ success: true, data: { lesson: updated } });
@@ -359,6 +418,7 @@ const getLessonById = async (req, res, next) => {
       where: { id: req.params.id },
       include: {
         attachments: { orderBy: { sortOrder: 'asc' } },
+        quiz: { select: { id: true } },
       },
     });
 

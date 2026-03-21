@@ -44,16 +44,27 @@ export default function MyCoursesPage() {
       if (!Array.isArray(enrollments)) return [];
       return enrollments.map((e) => {
         const course = e.course || {};
+        const completion = Number(e.completionPct ?? e.completion_pct ?? 0);
+        const title = course.title || e.title || 'Untitled Course';
+        const description =
+          course.description ||
+          course.shortDesc ||
+          e.shortDesc ||
+          e.short_desc ||
+          '';
+        const tags = course.tags || e.tags || [];
+        const coverImage = course.coverImageUrl || e.coverImageUrl || e.cover_image_url || null;
+
         return {
-          id: course.id || e.courseId,
-          title: course.title || 'Untitled Course',
-          description: course.description || course.shortDesc || '',
-          tags: course.tags || [],
-          coverImage: course.coverImageUrl || null,
+          id: course.id || e.courseId || e.course_id,
+          title,
+          description,
+          tags,
+          coverImage,
           published: course.isPublished,
           status: e.status,
-          progress: e.completionPct || 0,
-          completionPercent: e.completionPct || 0,
+          progress: completion,
+          completionPercent: completion,
           isEnrolled: true,
           enrolled: true,
         };
@@ -72,11 +83,10 @@ export default function MyCoursesPage() {
 
   const stats = useMemo(() => {
     const enrolled = courses.length;
-    const completed = courses.filter((c) => (c.status || '').toLowerCase() === 'completed' || Number(c.progress || 0) >= 100).length;
+    const completed = courses.filter((c) => Number(c.progress || 0) >= 100).length;
     const inProgress = courses.filter((c) => {
       const p = Number(c.progress || 0);
-      const s = (c.status || '').toLowerCase();
-      return s === 'in_progress' || (p > 0 && p < 100);
+      return p > 0 && p < 100;
     }).length;
     return { enrolled, completed, inProgress };
   }, [courses]);

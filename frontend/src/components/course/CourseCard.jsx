@@ -4,8 +4,8 @@ import { resolveMediaUrl } from '../../lib/media';
 
 const getCTA = (course, isAuthenticated) => {
   const isEnrolled = !!(course.isEnrolled || course.enrolled || course.enrollment);
-  const completion = Number(course.completionPercent || course.progress || 0);
-  const isCompleted = (course.status || '').toLowerCase() === 'completed' || completion >= 100;
+  const completion = Math.max(0, Math.min(100, Number(course.completionPercent || course.progress || 0)));
+  const isCompleted = completion >= 100;
   const inProgress = (course.status || '').toLowerCase() === 'in_progress' || (completion > 0 && completion < 100);
   const price = Number(course.price || 0);
   const requiresPayment = !!(course.requiresPayment || price > 0);

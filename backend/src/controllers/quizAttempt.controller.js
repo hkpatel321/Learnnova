@@ -99,6 +99,7 @@ const submitQuiz = async (req, res, next) => {
     let correctCount = 0;
     const totalCount = quiz.questions.length;
     const correctOptionIds = [];
+    const answersReview = [];
 
     // Map correct options for fast lookup
     const correctOptionsMap = {};
@@ -113,11 +114,24 @@ const submitQuiz = async (req, res, next) => {
     // Process user's answers
     const answersData = [];
     for (const ans of answers) {
+      const question = quiz.questions.find((q) => q.id === ans.questionId);
+      const selectedOption = question?.options?.find((o) => o.id === ans.selectedOptionId);
+      const correctOption = question?.options?.find((o) => o.id === correctOptionsMap[ans.questionId]);
+
       const isCorrect = correctOptionsMap[ans.questionId] === ans.selectedOptionId;
       if (isCorrect) correctCount++;
+
       answersData.push({
         questionId: ans.questionId,
         selectedOptionId: ans.selectedOptionId,
+        isCorrect,
+      });
+
+      answersReview.push({
+        questionId: ans.questionId,
+        questionText: question?.questionText || '',
+        selectedOptionText: selectedOption?.optionText || '',
+        correctOptionText: correctOption?.optionText || '',
         isCorrect,
       });
     }
@@ -208,12 +222,16 @@ const submitQuiz = async (req, res, next) => {
       success: true,
       data: {
         passed,
+        correct: correctCount,
+        total: totalCount,
         correctAnswers: correctCount,
         totalQuestions: totalCount,
         pointsEarned,
         attemptNumber,
         totalPoints: result.newTotalPoints,
         correctOptionIds,
+        answersReview,
+        attemptedAt: result.attempt.attemptedAt,
       },
     });
   } catch (err) {

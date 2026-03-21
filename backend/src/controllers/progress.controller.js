@@ -16,6 +16,13 @@ const completeLesson = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Lesson not found' });
     }
 
+    if (lesson.lessonType === 'quiz') {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete and pass the quiz to mark this lesson as completed',
+      });
+    }
+
     const enrollment = await prisma.enrollment.findUnique({
       where: { userId_courseId: { userId, courseId: lesson.courseId } },
       include: {
@@ -161,7 +168,73 @@ const getCourseProgress = async (req, res, next) => {
   }
 };
 
+// ── 3. completeCourse ───────────────────────────────────────────
+
+const completeCourse = async (req, res, next) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user.id;
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      include: {
+        course: {
+          select: {
+            lessons: { select: { id: true } },
+          },
+        },
+        lessonProgress: {
+          select: { lessonId: true, isCompleted: true },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Not enrolled in this course' });
+    }
+
+    const totalLessons = enrollment.course.lessons.length;
+    const completedSet = new Set(
+      enrollment.lessonProgress.filter((lp) => lp.isCompleted).map((lp) => lp.lessonId)
+    );
+
+    const allLessonIds = enrollment.course.lessons.map((l) => l.id);
+    const allComplete = totalLessons > 0 && allLessonIds.every((id) => completedSet.has(id));
+
+    if (!allComplete) {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete all lessons before completing the course',
+      });
+    }
+
+    const updated = await prisma.enrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        status: 'completed',
+        completedAt: new Date(),
+      },
+      select: {
+        id: true,
+        status: true,
+        completedAt: true,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        enrollment: updated,
+        completionPct: 100,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   completeLesson,
   getCourseProgress,
+  completeCourse,
 };

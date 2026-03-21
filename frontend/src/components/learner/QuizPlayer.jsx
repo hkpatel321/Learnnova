@@ -41,8 +41,8 @@ const QuizPlayer = ({ quizId, onComplete }) => {
     queryKey: ['quiz-player-meta', quizId],
     queryFn: async () => {
       try {
-        const res = await axios.get(`/api/quizzes/${quizId}`);
-        return res.data;
+        const res = await axios.get(`/quizzes/${quizId}`);
+        return res.data?.data?.quiz || res.data?.quiz || res.data;
       } catch {
         return {
           id: quizId,
@@ -57,15 +57,22 @@ const QuizPlayer = ({ quizId, onComplete }) => {
     enabled: !!quizId,
   });
 
-  const quiz = runtimeQuiz || quizMeta;
+  const quiz = runtimeQuiz || quizMeta || {
+    id: quizId,
+    title: 'Quiz',
+    questions: [],
+    ...defaultPoints,
+    attempt_count: 0,
+    attempts: [],
+  };
   const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
   const totalQuestions = questions.length;
-  const attemptCount = Number(quiz?.attempt_count || quiz?.attemptCount || 0);
+  const attemptCount = Number(quiz?.attemptCount ?? quiz?.attempt_count ?? 0);
   const attempts = quiz?.attempts || [];
-  const points1 = Number(quiz?.points_1 ?? quiz?.pointsFirstAttempt ?? defaultPoints.points_1);
-  const points2 = Number(quiz?.points_2 ?? quiz?.pointsSecondAttempt ?? defaultPoints.points_2);
-  const points3 = Number(quiz?.points_3 ?? quiz?.pointsThirdAttempt ?? defaultPoints.points_3);
-  const points4 = Number(quiz?.points_4 ?? quiz?.pointsFourthPlusAttempt ?? defaultPoints.points_4);
+  const points1 = Number(quiz?.points_1 ?? quiz?.pointsAttempt1 ?? quiz?.pointsFirstAttempt ?? quiz?.rewards?.attempt1 ?? defaultPoints.points_1);
+  const points2 = Number(quiz?.points_2 ?? quiz?.pointsAttempt2 ?? quiz?.pointsSecondAttempt ?? quiz?.rewards?.attempt2 ?? defaultPoints.points_2);
+  const points3 = Number(quiz?.points_3 ?? quiz?.pointsAttempt3 ?? quiz?.pointsThirdAttempt ?? quiz?.rewards?.attempt3 ?? defaultPoints.points_3);
+  const points4 = Number(quiz?.points_4 ?? quiz?.pointsAttempt4plus ?? quiz?.pointsFourthPlusAttempt ?? quiz?.rewards?.attempt4plus ?? defaultPoints.points_4);
   const currentQuestion = questions[currentIndex];
 
   useEffect(() => {
@@ -102,32 +109,41 @@ const QuizPlayer = ({ quizId, onComplete }) => {
 
   const startMutation = useMutation({
     mutationFn: async () => {
-      const res = await axios.get(`/api/quiz-attempts/${quizId}/start`);
-      return res.data;
+      if (!quizId) {
+        throw new Error('Quiz is not linked to this lesson yet');
+      }
+      const res = await axios.get(`/quiz-attempts/${quizId}/start`);
+      return res.data?.data || res.data;
     },
     onSuccess: (data) => {
+      const startedQuiz = data?.quiz || {};
       setRuntimeQuiz((prev) => ({
         ...(prev || quiz),
-        ...(data.quiz || {}),
-        questions: data.questions || data.quiz?.questions || prev?.questions || quiz.questions || [],
+        ...startedQuiz,
+        attemptCount: data?.attemptCount ?? data?.attempt_count ?? prev?.attemptCount ?? attemptCount,
+        rewards: data?.rewards || prev?.rewards,
+        questions: startedQuiz?.questions || data?.questions || prev?.questions || quiz?.questions || [],
       }));
       setSelectedAnswers({});
       setCurrentIndex(0);
       setReviewOpen(false);
       setViewState('question');
     },
-    onError: () => toast.error('Failed to start quiz'),
+    onError: (error) => toast.error(error?.message || 'Failed to start quiz'),
   });
 
   const submitMutation = useMutation({
     mutationFn: async (payload) => {
-      const res = await axios.post(`/api/quiz-attempts/${quizId}/submit`, payload);
-      return res.data;
+      if (!quizId) {
+        throw new Error('Quiz is not linked to this lesson yet');
+      }
+      const res = await axios.post(`/quiz-attempts/${quizId}/submit`, payload);
+      return res.data?.data || res.data;
     },
     onSuccess: (data) => {
-      const correct = Number(data.correct ?? data.correctCount ?? 0);
-      const total = Number(data.total ?? totalQuestions);
-      const passed = data.passed ?? correct >= total;
+      const correct = Number(data.correct ?? data.correctCount ?? data.correctAnswers ?? 0);
+      const total = Number(data.total ?? data.totalQuestions ?? totalQuestions);
+      const passed = data.passed ?? (total > 0 && correct >= total);
       const pointsEarned = Number(data.pointsEarned ?? data.points_earned ?? 0);
       const attemptedAt = data.attemptedAt || new Date().toISOString();
 
@@ -240,7 +256,7 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         <button
           type="button"
           onClick={() => startMutation.mutate()}
-          disabled={startMutation.isPending}
+          disabled={startMutation.isPending || !quizId}
           className="mt-6 w-full h-12 rounded-xl bg-[#2D31D4] text-white font-semibold inline-flex items-center justify-center gap-2"
         >
           {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -265,7 +281,9 @@ const QuizPlayer = ({ quizId, onComplete }) => {
           <span className="inline-block text-xs px-3 py-1 rounded-full bg-[#2D31D4] text-white">
             Question {currentIndex + 1}
           </span>
-          <h3 className="text-[20px] font-semibold text-gray-900 mt-3">{currentQuestion?.question_text || currentQuestion?.text}</h3>
+          <h3 className="text-[20px] font-semibold text-gray-900 mt-3">
+            {currentQuestion?.questionText || currentQuestion?.question_text || currentQuestion?.text}
+          </h3>
 
           <div className="mt-6 flex flex-col gap-3">
             {(currentQuestion?.options || []).map((opt) => {
@@ -288,7 +306,7 @@ const QuizPlayer = ({ quizId, onComplete }) => {
                 >
                   <div className="flex items-start gap-3">
                     <span className={`mt-0.5 w-4 h-4 rounded-full border ${selected ? 'border-[#2D31D4] bg-[#2D31D4]' : 'border-gray-400'}`} />
-                    <span className="flex-1 text-sm text-gray-800">{opt.option_text || opt.text}</span>
+                    <span className="flex-1 text-sm text-gray-800">{opt.optionText || opt.option_text || opt.text}</span>
                   </div>
                 </button>
               );

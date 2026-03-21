@@ -14,8 +14,8 @@ const defaultRewards = {
 const ensureMinimumOptions = (options = []) => {
   const normalized = options.map((opt, idx) => ({
     id: opt.id || `temp-${idx}`,
-    option_text: opt.option_text || opt.text || '',
-    is_correct: !!opt.is_correct,
+    option_text: opt.option_text || opt.optionText || opt.text || '',
+    is_correct: !!(opt.is_correct ?? opt.isCorrect),
   }));
   while (normalized.length < 2) {
     normalized.push({
@@ -47,10 +47,19 @@ const QuizTab = ({ courseId }) => {
     },
   });
 
-  const activeQuiz = useMemo(
-    () => quizzes.find((quiz) => String(quiz.id) === String(activeQuizId)) || null,
-    [quizzes, activeQuizId]
-  );
+  const { data: quizDetail } = useQuery({
+    queryKey: ['quiz-detail', activeQuizId],
+    queryFn: async () => {
+      const res = await axios.get(`/quizzes/${activeQuizId}`);
+      return res.data?.data?.quiz || res.data?.quiz || null;
+    },
+    enabled: !!activeQuizId,
+  });
+
+  const activeQuiz = useMemo(() => {
+    if (quizDetail && String(quizDetail.id) === String(activeQuizId)) return quizDetail;
+    return quizzes.find((quiz) => String(quiz.id) === String(activeQuizId)) || null;
+  }, [quizzes, activeQuizId, quizDetail]);
 
   const activeQuestion = useMemo(() => {
     if (!activeQuiz || !activeQuestionId) return null;
@@ -63,10 +72,10 @@ const QuizTab = ({ courseId }) => {
     const timer = setTimeout(() => {
       setQuizTitle(activeQuiz.title || '');
       setRewards({
-        pointsFirstAttempt: activeQuiz.pointsFirstAttempt ?? '',
-        pointsSecondAttempt: activeQuiz.pointsSecondAttempt ?? '',
-        pointsThirdAttempt: activeQuiz.pointsThirdAttempt ?? '',
-        pointsFourthPlusAttempt: activeQuiz.pointsFourthPlusAttempt ?? '',
+        pointsFirstAttempt: activeQuiz.pointsFirstAttempt ?? activeQuiz.pointsAttempt1 ?? '',
+        pointsSecondAttempt: activeQuiz.pointsSecondAttempt ?? activeQuiz.pointsAttempt2 ?? '',
+        pointsThirdAttempt: activeQuiz.pointsThirdAttempt ?? activeQuiz.pointsAttempt3 ?? '',
+        pointsFourthPlusAttempt: activeQuiz.pointsFourthPlusAttempt ?? activeQuiz.pointsAttempt4plus ?? '',
       });
     }, 0);
     return () => clearTimeout(timer);
@@ -75,7 +84,7 @@ const QuizTab = ({ courseId }) => {
   useEffect(() => {
     if (!activeQuestion) return;
     const timer = setTimeout(() => {
-      setQuestionText(activeQuestion.question_text || activeQuestion.text || '');
+      setQuestionText(activeQuestion.question_text || activeQuestion.questionText || activeQuestion.text || '');
       setOptions(ensureMinimumOptions(activeQuestion.options || []));
     }, 0);
     return () => clearTimeout(timer);
@@ -100,6 +109,7 @@ const QuizTab = ({ courseId }) => {
     mutationFn: async ({ quizId, payload }) => axios.put(`/quizzes/${quizId}`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-quizzes', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['quiz-detail', activeQuizId] });
     },
     onError: () => toast.error('Failed to update quiz'),
   });
@@ -130,8 +140,9 @@ const QuizTab = ({ courseId }) => {
     },
     onSuccess: (createdQuestion) => {
       queryClient.invalidateQueries({ queryKey: ['course-quizzes', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['quiz-detail', activeQuizId] });
       setActiveQuestionId(createdQuestion?.id || null);
-      setQuestionText(createdQuestion?.question_text || '');
+      setQuestionText(createdQuestion?.question_text || createdQuestion?.questionText || '');
       setOptions(ensureMinimumOptions(createdQuestion?.options || []));
     },
     onError: () => toast.error('Failed to add question'),
@@ -141,6 +152,7 @@ const QuizTab = ({ courseId }) => {
     mutationFn: async (questionId) => axios.delete(`/questions/${questionId}`),
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['course-quizzes', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['quiz-detail', activeQuizId] });
       if (String(activeQuestionId) === String(deletedId)) {
         setActiveQuestionId(null);
         setQuestionText('');
@@ -155,6 +167,7 @@ const QuizTab = ({ courseId }) => {
     mutationFn: async ({ questionId, payload }) => axios.put(`/questions/${questionId}`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-quizzes', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['quiz-detail', activeQuizId] });
       toast.success('Question saved');
     },
     onError: () => toast.error('Failed to save question'),
@@ -178,10 +191,10 @@ const QuizTab = ({ courseId }) => {
     updateQuizMutation.mutate({
       quizId: activeQuizId,
       payload: {
-        pointsFirstAttempt: Number(rewards.pointsFirstAttempt || 0),
-        pointsSecondAttempt: Number(rewards.pointsSecondAttempt || 0),
-        pointsThirdAttempt: Number(rewards.pointsThirdAttempt || 0),
-        pointsFourthPlusAttempt: Number(rewards.pointsFourthPlusAttempt || 0),
+        pointsAttempt1: Number(rewards.pointsFirstAttempt || 0),
+        pointsAttempt2: Number(rewards.pointsSecondAttempt || 0),
+        pointsAttempt3: Number(rewards.pointsThirdAttempt || 0),
+        pointsAttempt4plus: Number(rewards.pointsFourthPlusAttempt || 0),
       },
     }, {
       onSuccess: () => toast.success('Point rewards saved'),
@@ -221,6 +234,8 @@ const QuizTab = ({ courseId }) => {
     setActiveQuizId(quizId);
     setActiveQuestionId(null);
   };
+
+  const questions = Array.isArray(activeQuiz?.questions) ? activeQuiz.questions : [];
 
   if (!activeQuizId) {
     return (
@@ -303,7 +318,6 @@ const QuizTab = ({ courseId }) => {
     );
   }
 
-  const questions = Array.isArray(activeQuiz?.questions) ? activeQuiz.questions : [];
   const activeQuestionIndex = questions.findIndex((q) => String(q.id) === String(activeQuestionId));
 
   return (
@@ -346,7 +360,7 @@ const QuizTab = ({ courseId }) => {
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-[11px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Q{index + 1}</span>
-                    <span className="text-[13px] leading-5 truncate">{question.question_text || 'Untitled question'}</span>
+                    <span className="text-[13px] leading-5 truncate">{question.question_text || question.questionText || 'Untitled question'}</span>
                   </div>
                 </button>
               );

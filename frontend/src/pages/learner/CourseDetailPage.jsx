@@ -173,6 +173,20 @@ export default function CourseDetailPage() {
     enabled: isAuthenticated,
   });
 
+  const enrollMutation = useMutation({
+    mutationFn: async () => axios.post(`/courses/${courseId}/enroll`),
+    onSuccess: () => {
+      toast.success("You're enrolled! Start learning 🎓");
+      queryClient.invalidateQueries({ queryKey: ['course-progress', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['my-courses'] });
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+    },
+    onError: (error) => {
+      const message = error?.response?.data?.message || 'Failed to enroll in course';
+      toast.error(message);
+    },
+  });
+
   const submitReviewMutation = useMutation({
     mutationFn: async (payload) => axios.post(`/courses/${courseId}/reviews`, payload),
     onSuccess: () => {
@@ -192,8 +206,9 @@ export default function CourseDetailPage() {
 
   const completedLessonIds = new Set(progress?.completedLessonIds || progress?.completed_lessons || []);
   const inProgressLessonIds = new Set(progress?.inProgressLessonIds || progress?.in_progress_lessons || []);
-  const completionPercent = Number(
-    progress?.completionPercent ?? progress?.completion_percent ?? course?.completionPercent ?? 0
+  const completionPercent = Math.max(
+    0,
+    Math.min(100, Number(progress?.completionPercent ?? progress?.completion_percent ?? course?.completionPercent ?? 0))
   );
   const isEnrolled = !!(
     progress?.isEnrolled ||
@@ -201,7 +216,7 @@ export default function CourseDetailPage() {
     course?.enrolled ||
     course?.enrollment
   );
-  const isCompletedCourse = completionPercent >= 100 || (progress?.status || '').toLowerCase() === 'completed';
+  const isCompletedCourse = completionPercent >= 100;
   const isInProgress = completionPercent > 0 && completionPercent < 100;
   const price = Number(course?.price || 0);
   const isPaid = !!(progress?.isPaid || course?.isPaid);
@@ -274,6 +289,27 @@ export default function CourseDetailPage() {
     navigate(`/learn/${courseId}/${lesson.id}`);
   };
 
+  const handlePrimaryAction = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+
+    if (cta.action === 'buy') {
+      toast('Purchase flow is not implemented yet', { icon: '💳' });
+      return;
+    }
+
+    if (isEnrolled) {
+      if (lessons[0]?.id) {
+        navigate(`/learn/${courseId}/${lessons[0].id}`);
+      }
+      return;
+    }
+
+    await enrollMutation.mutateAsync();
+  };
+
   if (courseLoading) {
     return (
       <div className="h-[70vh] flex items-center justify-center">
@@ -321,19 +357,10 @@ export default function CourseDetailPage() {
             <button
               type="button"
               className={`mt-6 h-12 w-48 rounded-lg font-semibold ${cta.className}`}
-              onClick={() => {
-                if (cta.action === 'buy') {
-                  toast('Purchase flow is not implemented yet', { icon: '💳' });
-                  return;
-                }
-                if (isEnrolled && lessons[0]?.id) {
-                  navigate(`/learn/${courseId}/${lessons[0].id}`);
-                  return;
-                }
-                toast.success("You're enrolled! Start learning 🎓");
-              }}
+              disabled={enrollMutation.isPending}
+              onClick={handlePrimaryAction}
             >
-              {cta.label}
+              {enrollMutation.isPending ? 'Enrolling...' : cta.label}
             </button>
           </div>
 
@@ -436,9 +463,17 @@ export default function CourseDetailPage() {
                 <div className="my-4 border-t border-gray-200" />
                 <button
                   type="button"
+                  onClick={handlePrimaryAction}
+                  disabled={enrollMutation.isPending}
                   className="w-full py-2.5 rounded-lg bg-[#2D31D4] text-white text-sm font-semibold hover:bg-blue-800"
                 >
-                  {isInProgress ? 'Continue Learning →' : isEnrolled ? 'Open Course' : 'Enroll Now'}
+                  {enrollMutation.isPending
+                    ? 'Enrolling...'
+                    : isInProgress
+                      ? 'Continue Learning →'
+                      : isEnrolled
+                        ? 'Open Course'
+                        : 'Enroll Now'}
                 </button>
                 <div className="mt-4 space-y-2 text-sm text-gray-700">
                   <p>📚 {lessonCount} Lessons</p>
