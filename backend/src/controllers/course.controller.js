@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ const courseWithStats = async (courseId) => {
     include: {
       responsible: { select: { name: true } },
       lessons: { select: { id: true, durationMins: true } },
+      _count: { select: { learnerLinks: true } },
     },
   });
 
@@ -20,12 +22,13 @@ const courseWithStats = async (courseId) => {
     0
   );
 
-  const { lessons, responsible, ...rest } = course;
+  const { lessons, responsible, _count, ...rest } = course;
   return {
     ...rest,
     responsibleName: responsible?.name || null,
     lessonCount,
     totalDurationMins,
+    enrolledLearnerCount: _count.learnerLinks,
   };
 };
 
@@ -75,6 +78,7 @@ const getAllCourses = async (req, res, next) => {
       include: {
         responsible: { select: { name: true } },
         lessons: { select: { id: true, durationMins: true } },
+        _count: { select: { learnerLinks: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -86,12 +90,13 @@ const getAllCourses = async (req, res, next) => {
         (sum, l) => sum + (l.durationMins || 0),
         0
       );
-      const { lessons, responsible, ...rest } = c;
+      const { lessons, responsible, _count, ...rest } = c;
       return {
         ...rest,
         responsibleName: responsible?.name || null,
         lessonCount,
         totalDurationMins,
+        enrolledLearnerCount: _count.learnerLinks,
       };
     });
 
@@ -339,6 +344,7 @@ const getCatalog = async (req, res, next) => {
         responsible: { select: { id: true, name: true, avatarUrl: true } },
         lessons: { select: { id: true, durationMins: true, lessonType: true } },
         reviews: { select: { rating: true } },
+        _count: { select: { learnerLinks: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -357,7 +363,7 @@ const getCatalog = async (req, res, next) => {
             )
           : 0;
 
-      const { lessons, reviews, responsible, ...rest } = c;
+      const { lessons, reviews, responsible, _count, ...rest } = c;
       return {
         ...rest,
         instructor: responsible,
@@ -366,6 +372,7 @@ const getCatalog = async (req, res, next) => {
         reviewCount,
         avgRating,
         requiresPayment: c.accessRule === 'payment',
+        enrolledLearnerCount: _count.learnerLinks,
       };
     });
 
@@ -391,6 +398,7 @@ const getCourseDetail = async (req, res, next) => {
           },
         },
         reviews: { select: { rating: true } },
+        _count: { select: { learnerLinks: true } },
       },
     });
 
@@ -429,7 +437,32 @@ const getCourseDetail = async (req, res, next) => {
       attachments: l.attachments,
     }));
 
-    const { reviews, responsible, ...rest } = course;
+    let learnerAccess = {
+      isEnrolled: false,
+      isPaid: false,
+      paidAt: null,
+      amountPaid: null,
+      canAccessCourse: false,
+      accessMessage: null,
+    };
+
+    if (req.user?.role === 'learner') {
+      const access = await getLearnerCourseAccess(prisma, {
+        userId: req.user.id,
+        courseId: course.id,
+      });
+
+      learnerAccess = {
+        isEnrolled: !!access.enrollment,
+        isPaid: !!access.enrollment?.isPaid,
+        paidAt: access.enrollment?.paidAt || null,
+        amountPaid: access.enrollment?.amountPaid || null,
+        canAccessCourse: !!access.ok,
+        accessMessage: access.ok ? null : access.message,
+      };
+    }
+
+    const { reviews, responsible, _count, ...rest } = course;
 
     return res.json({
       success: true,
@@ -443,6 +476,8 @@ const getCourseDetail = async (req, res, next) => {
           reviewCount,
           avgRating,
           requiresPayment: course.accessRule === 'payment',
+          enrolledLearnerCount: _count.learnerLinks,
+          ...learnerAccess,
         },
       },
     });

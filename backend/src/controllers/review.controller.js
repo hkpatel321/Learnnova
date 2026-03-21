@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 
 // ── 1. addOrUpdateReview ─────────────────────────────────────────
 
@@ -19,12 +20,13 @@ const addOrUpdateReview = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    // Check if user is enrolled
-    const enrollment = await prisma.enrollment.findUnique({
-      where: { userId_courseId: { userId, courseId } },
-    });
-    if (!enrollment) {
-      return res.status(403).json({ success: false, message: 'You must be enrolled to leave a review' });
+    const access = await getLearnerCourseAccess(prisma, { userId, courseId });
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+        ...(access.code ? { code: access.code } : {}),
+      });
     }
 
     // Upsert review

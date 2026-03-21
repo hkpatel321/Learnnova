@@ -152,8 +152,60 @@ const sendCourseContactEmail = async ({
   });
 };
 
+const sendCoursePurchaseEmail = async ({
+  to,
+  learnerName,
+  courseTitle,
+  courseUrl,
+  amount,
+  currency,
+}) => {
+  const transporter = await createTransporter();
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  const appName = process.env.APP_NAME || 'Learnova';
+  const amountLine =
+    typeof amount !== 'undefined' && amount !== null
+      ? `${currency || 'INR'} ${Number(amount).toFixed(2)}`
+      : null;
+
+  await transporter.sendMail({
+    from,
+    to,
+    subject: `Course purchase confirmed: ${courseTitle}`,
+    text: [
+      `Hi ${learnerName || 'there'},`,
+      '',
+      `Your purchase for "${courseTitle}" was successful.`,
+      ...(amountLine ? [`Amount paid: ${amountLine}`] : []),
+      ...(courseUrl ? [`Start learning here: ${courseUrl}`] : []),
+      '',
+      `Thank you for learning with ${appName}.`,
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+        <p>Hi ${learnerName || 'there'},</p>
+        <p>Your purchase for <strong>${courseTitle}</strong> was successful.</p>
+        ${
+          amountLine
+            ? `<p><strong>Amount paid:</strong> ${amountLine}</p>`
+            : ''
+        }
+        ${
+          courseUrl
+            ? `<p><a href="${courseUrl}" style="display: inline-block; padding: 12px 18px; background: #2D31D4; color: #ffffff; text-decoration: none; border-radius: 8px;">Open Course</a></p>
+               <p>If the button does not work, copy and paste this URL into your browser:</p>
+               <p><a href="${courseUrl}">${courseUrl}</a></p>`
+            : ''
+        }
+        <p>Thank you for learning with ${appName}.</p>
+      </div>
+    `,
+  });
+};
+
 module.exports = {
   sendPasswordResetEmail,
   sendCourseInvitationEmail,
   sendCourseContactEmail,
+  sendCoursePurchaseEmail,
 };

@@ -1,84 +1,70 @@
 const { Router } = require('express');
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const { validate } = require('../middleware/validate');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { rejectUnknownBodyFields } = require('../middleware/requestSecurity');
 const enrollmentController = require('../controllers/enrollment.controller');
 
 const router = Router();
 
-// All routes require authentication
 router.use(authenticate);
 
-// ── Learner Enrollment Routes ──────────────────────────────────────
-
-// POST /api/courses/:courseId/enroll
 router.post(
   '/courses/:courseId/enroll',
   requireRole('learner'),
+  [param('courseId').isUUID().withMessage('Valid course id is required')],
+  validate,
   enrollmentController.enrollInCourse
 );
 
-// GET /api/enrollments/me
-router.get(
-  '/enrollments/me',
-  requireRole('learner'),
-  enrollmentController.getMyEnrollments
-);
+router.get('/enrollments/me', requireRole('learner'), enrollmentController.getMyEnrollments);
 
-// GET /api/enrollments/:id
 router.get(
   '/enrollments/:id',
+  [param('id').isUUID().withMessage('Valid enrollment id is required')],
+  validate,
   enrollmentController.getEnrollmentById
 );
 
-// ── Course Attendee/Invitation Routes ──────────────────────────────
-
-// POST /api/courses/:courseId/attendees
 router.post(
   '/courses/:courseId/attendees',
   requireRole('instructor', 'admin'),
+  rejectUnknownBodyFields(['emails']),
   [
-    body('emails')
-      .isArray({ min: 1 })
-      .withMessage('Provide an array of emails'),
-    body('emails.*')
-      .isEmail()
-      .withMessage('Must be a valid email array'),
+    param('courseId').isUUID().withMessage('Valid course id is required'),
+    body('emails').isArray({ min: 1, max: 200 }).withMessage('Provide an array of emails'),
+    body('emails.*').isEmail().normalizeEmail().withMessage('Must be a valid email array'),
   ],
   validate,
   enrollmentController.addAttendees
 );
 
-// GET /api/courses/:courseId/attendees
 router.get(
   '/courses/:courseId/attendees',
   requireRole('instructor', 'admin'),
+  [param('courseId').isUUID().withMessage('Valid course id is required')],
+  validate,
   enrollmentController.getAttendees
 );
 
 router.post(
   '/courses/:courseId/contact',
   requireRole('instructor', 'admin'),
+  rejectUnknownBodyFields(['subject', 'message']),
   [
-    body('subject')
-      .trim()
-      .notEmpty()
-      .withMessage('Subject is required'),
-    body('message')
-      .trim()
-      .notEmpty()
-      .withMessage('Message is required'),
+    param('courseId').isUUID().withMessage('Valid course id is required'),
+    body('subject').trim().isLength({ min: 1, max: 160 }).withMessage('Subject is required'),
+    body('message').trim().isLength({ min: 1, max: 5000 }).withMessage('Message is required'),
   ],
   validate,
   enrollmentController.contactAttendees
 );
 
-// ── Invitation Acceptance ──────────────────────────────────────────
-
-// POST /api/invitations/:token/accept
 router.post(
   '/invitations/:token/accept',
   requireRole('learner'),
+  [param('token').isUUID().withMessage('Valid invitation token is required')],
+  validate,
   enrollmentController.acceptInvitation
 );
 

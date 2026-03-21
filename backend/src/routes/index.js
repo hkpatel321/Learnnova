@@ -33,6 +33,9 @@ router.use('/', progressRoutes);
 const userRoutes = require('./user.routes');
 router.use('/', userRoutes);
 
+const activityRoutes = require('./activity.routes');
+router.use('/', activityRoutes);
+
 
 
 module.exports = router;

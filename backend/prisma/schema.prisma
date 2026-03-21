@@ -25,10 +25,12 @@ model User {
   coursesResponsible  Course[]            @relation("ResponsibleUser")
   lessonsResponsible  Lesson[]            @relation("LessonResponsible")
   enrollments         Enrollment[]
+  courseLearnerLinks  CourseLearner[]
   lessonProgress      LessonProgress[]
   quizAttempts        QuizAttempt[]
   reviews             Review[]
   payments            Payment[]
+  activityEvents      ActivityEvent[]
   invitationsSent     CourseInvitation[]  @relation("InvitedBy")
   invitationsReceived CourseInvitation[]  @relation("InvitedUser")
 
@@ -64,9 +66,11 @@ model Course {
   lessons      Lesson[]
   quizzes      Quiz[]
   enrollments  Enrollment[]
+  learnerLinks CourseLearner[]
   invitations  CourseInvitation[]
   reviews      Review[]
   payments     Payment[]
+  activityEvents ActivityEvent[]
 
   @@map("courses")
 }
@@ -103,6 +107,7 @@ model Lesson {
   attachments  LessonAttachment[]
   progress     LessonProgress[]
   quiz         Quiz?               @relation("QuizLesson")
+  activityEvents ActivityEvent[]
 
   @@map("lessons")
 }
@@ -187,7 +192,7 @@ model QuizOption {
 model Enrollment {
   id            String           @id @default(uuid())
   userId        String           @map("user_id")
-  courseId       String           @map("course_id")
+  courseId      String           @map("course_id")
   status        EnrollmentStatus @default(not_started)
   enrolledAt    DateTime         @default(now()) @map("enrolled_at")
   startedAt     DateTime?        @map("started_at")
@@ -204,8 +209,27 @@ model Enrollment {
   quizAttempts   QuizAttempt[]
   payments       Payment[]
 
+  // Join-table constraint for the learner<->course many-to-many relation:
+  // one learner can join many courses, one course can contain many learners,
+  // and each learner-course pair appears at most once.
   @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
   @@map("enrollments")
+}
+
+model CourseLearner {
+  userId    String   @map("user_id")
+  courseId  String   @map("course_id")
+  linkedAt  DateTime @default(now()) @map("linked_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@map("course_learners")
 }
 
 enum EnrollmentStatus {
@@ -346,4 +370,33 @@ enum InvitationStatus {
   pending
   accepted
   expired
+}
+
+enum ActivityType {
+  video_watch
+  quiz_attempt
+  document_open
+  document_download
+  image_view
+  image_download
+}
+
+model ActivityEvent {
+  id           String       @id @default(uuid())
+  userId       String       @map("user_id")
+  courseId     String?      @map("course_id")
+  lessonId     String?      @map("lesson_id")
+  activityType ActivityType @map("activity_type")
+  eventDate    DateTime     @default(now()) @map("event_date")
+  metadata     Json?        @map("metadata")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course       Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  lesson       Lesson?      @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+
+  @@index([userId, eventDate])
+  @@index([courseId])
+  @@index([lessonId])
+  @@map("activity_events")
 }

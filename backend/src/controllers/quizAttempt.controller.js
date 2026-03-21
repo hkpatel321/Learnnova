@@ -1,4 +1,6 @@
 const prisma = require('../config/db');
+const { getLearnerCourseAccess } = require('../utils/learnerAccess');
+const { syncEnrollmentCourseProgress } = require('../utils/courseProgress');
 
 // ── 3. getQuizForPlayer ──────────────────────────────────────────
 
@@ -26,13 +28,13 @@ const getQuizForPlayer = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Quiz not found' });
     }
 
-    // Check enrollment
-    const enrollment = await prisma.enrollment.findUnique({
-      where: { userId_courseId: { userId, courseId: quiz.courseId } },
-    });
-
-    if (!enrollment) {
-      return res.status(403).json({ success: false, message: 'Not enrolled in this course' });
+    const access = await getLearnerCourseAccess(prisma, { userId, courseId: quiz.courseId });
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+        ...(access.code ? { code: access.code } : {}),
+      });
     }
 
     const attemptCount = await prisma.quizAttempt.count({
@@ -82,14 +84,19 @@ const submitQuiz = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Quiz not found' });
     }
 
+    const access = await getLearnerCourseAccess(prisma, { userId, courseId: quiz.courseId });
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+        ...(access.code ? { code: access.code } : {}),
+      });
+    }
+
     const enrollment = await prisma.enrollment.findUnique({
       where: { userId_courseId: { userId, courseId: quiz.courseId } },
       include: { course: { select: { lessons: true } } },
     });
-
-    if (!enrollment) {
-      return res.status(403).json({ success: false, message: 'Not enrolled in this course' });
-    }
 
     const pastAttemptsCount = await prisma.quizAttempt.count({
       where: { userId, quizId },
@@ -98,27 +105,72 @@ const submitQuiz = async (req, res, next) => {
 
     let correctCount = 0;
     const totalCount = quiz.questions.length;
-    const correctOptionIds = [];
 
     // Map correct options for fast lookup
     const correctOptionsMap = {};
+    const validQuestionIds = new Set();
+    const validOptionsByQuestion = new Map();
     for (const q of quiz.questions) {
+      validQuestionIds.add(q.id);
+      validOptionsByQuestion.set(
+        q.id,
+        new Set(q.options.map((option) => option.id))
+      );
+
       const correctOpt = q.options.find((o) => o.isCorrect);
       if (correctOpt) {
         correctOptionsMap[q.id] = correctOpt.id;
-        correctOptionIds.push(correctOpt.id);
       }
+    }
+
+    if (answers.length !== totalCount) {
+      return res.status(400).json({
+        success: false,
+        message: 'All quiz questions must be answered exactly once',
+      });
     }
 
     // Process user's answers
     const answersData = [];
+    const seenQuestionIds = new Set();
     for (const ans of answers) {
+      if (seenQuestionIds.has(ans.questionId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Duplicate answers are not allowed',
+        });
+      }
+
+      if (!validQuestionIds.has(ans.questionId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Answer contains an invalid question id',
+        });
+      }
+
+      if (!validOptionsByQuestion.get(ans.questionId)?.has(ans.selectedOptionId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Answer contains an invalid option for the question',
+        });
+      }
+
+      seenQuestionIds.add(ans.questionId);
+
       const isCorrect = correctOptionsMap[ans.questionId] === ans.selectedOptionId;
       if (isCorrect) correctCount++;
+
+      const question = quiz.questions.find((item) => item.id === ans.questionId);
+      const selectedOption = question?.options.find((item) => item.id === ans.selectedOptionId);
+      const correctOption = question?.options.find((item) => item.isCorrect);
+
       answersData.push({
         questionId: ans.questionId,
         selectedOptionId: ans.selectedOptionId,
         isCorrect,
+        questionText: question?.questionText || '',
+        selectedOptionText: selectedOption?.optionText || '',
+        correctOptionText: correctOption?.optionText || '',
       });
     }
 
@@ -184,21 +236,7 @@ const submitQuiz = async (req, res, next) => {
           },
         });
 
-        // Potentially update enrollment status to completed
-        const allProgress = await tx.lessonProgress.findMany({
-          where: { enrollmentId: enrollment.id, isCompleted: true },
-        });
-        if (allProgress.length === enrollment.course.lessons.length) {
-          await tx.enrollment.update({
-            where: { id: enrollment.id },
-            data: { status: 'completed' },
-          });
-        } else if (enrollment.status === 'not_started') {
-          await tx.enrollment.update({
-            where: { id: enrollment.id },
-            data: { status: 'in_progress' },
-          });
-        }
+        await syncEnrollmentCourseProgress(tx, enrollment.id);
       }
 
       return { attempt, newTotalPoints };
@@ -213,7 +251,13 @@ const submitQuiz = async (req, res, next) => {
         pointsEarned,
         attemptNumber,
         totalPoints: result.newTotalPoints,
-        correctOptionIds,
+        answersReview: answersData.map((item) => ({
+          questionId: item.questionId,
+          questionText: item.questionText,
+          selectedOptionText: item.selectedOptionText,
+          correctOptionText: item.correctOptionText,
+          isCorrect: item.isCorrect,
+        })),
       },
     });
   } catch (err) {
@@ -234,12 +278,13 @@ const getQuizAttemptHistory = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Quiz not found' });
     }
 
-    const enrollment = await prisma.enrollment.findUnique({
-      where: { userId_courseId: { userId, courseId: quiz.courseId } },
-    });
-
-    if (!enrollment) {
-      return res.status(403).json({ success: false, message: 'Not enrolled' });
+    const access = await getLearnerCourseAccess(prisma, { userId, courseId: quiz.courseId });
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+        ...(access.code ? { code: access.code } : {}),
+      });
     }
 
     const attempts = await prisma.quizAttempt.findMany({

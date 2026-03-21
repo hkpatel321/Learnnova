@@ -1,8 +1,9 @@
 const { Router } = require('express');
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const { validate } = require('../middleware/validate');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { uploadAny } = require('../middleware/upload');
+const { rejectUnknownBodyFields } = require('../middleware/requestSecurity');
 const lessonController = require('../controllers/lesson.controller');
 
 const router = Router();
@@ -11,29 +12,44 @@ const router = Router();
 router.use(authenticate);
 
 // ── Nested under /api/courses/:courseId/lessons ───────────────────
-// These routes are mounted in course-scoped context
 
-// GET  /api/courses/:courseId/lessons
 router.get(
   '/courses/:courseId/lessons',
   requireRole('instructor', 'admin'),
+  [param('courseId').isUUID().withMessage('Valid course id is required')],
+  validate,
   lessonController.getLessonsByCourse
 );
 
-// POST /api/courses/:courseId/lessons
 router.post(
   '/courses/:courseId/lessons',
   requireRole('instructor', 'admin'),
+  rejectUnknownBodyFields([
+    'title',
+    'type',
+    'lessonType',
+    'description',
+    'videoUrl',
+    'durationMins',
+    'durationMinutes',
+    'allowDownload',
+    'responsibleId',
+    'responsibleUserId',
+    'quizId',
+  ]),
   [
-    body('title').trim().notEmpty().withMessage('Title is required'),
-    body('type')
-      .optional()
-      .isIn(['video', 'document', 'image', 'quiz'])
-      .withMessage('type must be video, document, image, or quiz'),
-    body('lessonType')
-      .optional()
-      .isIn(['video', 'document', 'image', 'quiz'])
-      .withMessage('lessonType must be video, document, image, or quiz'),
+    param('courseId').isUUID().withMessage('Valid course id is required'),
+    body('title').trim().isLength({ min: 1, max: 160 }).withMessage('Title is required'),
+    body('type').optional().isIn(['video', 'document', 'image', 'quiz']),
+    body('lessonType').optional().isIn(['video', 'document', 'image', 'quiz']),
+    body('description').optional({ nullable: true }).isString().isLength({ max: 5000 }),
+    body('videoUrl').optional({ nullable: true }).isURL().withMessage('videoUrl must be a valid URL'),
+    body('durationMins').optional({ nullable: true }).isInt({ min: 0, max: 1440 }),
+    body('durationMinutes').optional({ nullable: true }).isInt({ min: 0, max: 1440 }),
+    body('allowDownload').optional().isBoolean().toBoolean(),
+    body('responsibleId').optional({ nullable: true }).isUUID(),
+    body('responsibleUserId').optional({ nullable: true }).isUUID(),
+    body('quizId').optional({ nullable: true }).isUUID(),
     body().custom((value) => {
       if (!value?.type && !value?.lessonType) {
         throw new Error('Either type or lessonType is required');
@@ -45,14 +61,14 @@ router.post(
   lessonController.createLesson
 );
 
-// PATCH /api/courses/:courseId/lessons/reorder
 router.patch(
   '/courses/:courseId/lessons/reorder',
   requireRole('instructor', 'admin'),
+  rejectUnknownBodyFields(['lessonIds']),
   [
-    body('lessonIds')
-      .isArray({ min: 1 })
-      .withMessage('lessonIds must be a non-empty array'),
+    param('courseId').isUUID().withMessage('Valid course id is required'),
+    body('lessonIds').isArray({ min: 1, max: 200 }).withMessage('lessonIds must be a non-empty array'),
+    body('lessonIds.*').isUUID().withMessage('Each lesson id must be valid'),
   ],
   validate,
   lessonController.reorderLessons
@@ -60,62 +76,71 @@ router.patch(
 
 // ── Standalone lesson routes (/api/lessons/:id) ──────────────────
 
-// GET /api/lessons/:id  (any authenticated user)
-router.get('/lessons/:id', lessonController.getLessonById);
+router.get(
+  '/lessons/:id',
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
+  lessonController.getLessonById
+);
 
-// PUT /api/lessons/:id
 router.put(
   '/lessons/:id',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
   uploadAny.single('file'),
   lessonController.updateLesson
 );
 
-// POST /api/lessons/:id/file
 router.post(
   '/lessons/:id/file',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
   uploadAny.single('file'),
   lessonController.uploadLessonFile
 );
 
-// POST /api/lessons/:id/image
 router.post(
   '/lessons/:id/image',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
   uploadAny.single('file'),
   lessonController.uploadLessonImage
 );
 
-// DELETE /api/lessons/:id
 router.delete(
   '/lessons/:id',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
   lessonController.deleteLesson
 );
 
 // ── Attachment routes ────────────────────────────────────────────
 
-// POST /api/lessons/:id/attachments
 router.post(
   '/lessons/:id/attachments',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid lesson id is required')],
+  validate,
   uploadAny.single('file'),
+  rejectUnknownBodyFields(['attachmentType', 'label', 'url']),
   [
-    body('label')
-      .optional()
-      .trim()
-      .notEmpty()
-      .withMessage('Label cannot be empty if provided'),
+    body('attachmentType').optional().isIn(['file', 'link']),
+    body('label').optional().trim().isLength({ min: 1, max: 160 }).withMessage('Label cannot be empty if provided'),
+    body('url').optional().isURL().withMessage('url must be a valid URL'),
   ],
   validate,
   lessonController.addAttachment
 );
 
-// DELETE /api/attachments/:id
 router.delete(
   '/attachments/:id',
   requireRole('instructor', 'admin'),
+  [param('id').isUUID().withMessage('Valid attachment id is required')],
+  validate,
   lessonController.deleteAttachment
 );
 

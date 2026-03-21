@@ -1,5 +1,7 @@
 const https = require('https');
 const prisma = require('../config/db');
+const { ensureCourseLearnerLink } = require('../utils/courseLearner');
+const { sendCoursePurchaseEmail } = require('../utils/mailer');
 
 const PAYMENT_PROVIDER = 'stripe';
 const DEFAULT_CURRENCY = (process.env.STRIPE_CURRENCY || 'INR').toLowerCase();
@@ -150,6 +152,8 @@ const createOrUpdatePaidEnrollment = async (tx, { userId, courseId, amount }) =>
   });
 
   if (existingEnrollment) {
+    await ensureCourseLearnerLink(tx, { userId, courseId });
+
     return tx.enrollment.update({
       where: { id: existingEnrollment.id },
       data: {
@@ -159,6 +163,8 @@ const createOrUpdatePaidEnrollment = async (tx, { userId, courseId, amount }) =>
       },
     });
   }
+
+  await ensureCourseLearnerLink(tx, { userId, courseId });
 
   return tx.enrollment.create({
     data: {
@@ -335,6 +341,19 @@ const verifyPayment = async (req, res, next) => {
       });
 
       return { enrollment, payment: verifiedPayment };
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const courseUrl = `${frontendUrl}/courses/${courseId}`;
+    sendCoursePurchaseEmail({
+      to: req.user.email,
+      learnerName: req.user.name,
+      courseTitle: lookup.course.title,
+      courseUrl,
+      amount: lookup.amount,
+      currency: (checkoutSession.currency || DEFAULT_CURRENCY).toUpperCase(),
+    }).catch((error) => {
+      console.error('Failed to send course purchase email:', error.message);
     });
 
     return res.json({

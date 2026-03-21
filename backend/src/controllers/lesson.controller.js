@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 
 const normalizeOptionalString = (value) => {
   if (value === undefined) return undefined;
@@ -446,6 +447,21 @@ const getLessonById = async (req, res, next) => {
         success: false,
         message: 'Lesson not found',
       });
+    }
+
+    if (req.user.role === 'learner') {
+      const access = await getLearnerCourseAccess(prisma, {
+        userId: req.user.id,
+        courseId: lesson.courseId,
+      });
+
+      if (!access.ok) {
+        return res.status(access.status).json({
+          success: false,
+          message: access.message,
+          ...(access.code ? { code: access.code } : {}),
+        });
+      }
     }
 
     return res.json({ success: true, data: { lesson: mapLessonForClient(lesson) } });

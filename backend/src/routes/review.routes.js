@@ -1,27 +1,28 @@
 const { Router } = require('express');
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const { validate } = require('../middleware/validate');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { rejectUnknownBodyFields } = require('../middleware/requestSecurity');
 const reviewController = require('../controllers/review.controller');
 
 const router = Router();
 
-// GET /api/courses/:courseId/reviews (Public - no auth required)
-router.get('/courses/:courseId/reviews', reviewController.getCourseReviews);
+router.get(
+  '/courses/:courseId/reviews',
+  [param('courseId').isUUID().withMessage('Valid course id is required')],
+  validate,
+  reviewController.getCourseReviews
+);
 
-// POST /api/courses/:courseId/reviews (Learners only)
 router.post(
   '/courses/:courseId/reviews',
   authenticate,
   requireRole('learner'),
+  rejectUnknownBodyFields(['rating', 'reviewText']),
   [
-    body('rating')
-      .isInt({ min: 1, max: 5 })
-      .withMessage('Rating must be an integer between 1 and 5'),
-    body('reviewText')
-      .optional()
-      .trim()
-      .isString(),
+    param('courseId').isUUID().withMessage('Valid course id is required'),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be an integer between 1 and 5'),
+    body('reviewText').optional({ nullable: true }).trim().isString().isLength({ max: 2000 }),
   ],
   validate,
   reviewController.addOrUpdateReview

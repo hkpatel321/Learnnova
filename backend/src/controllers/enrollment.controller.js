@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 const { sendCourseContactEmail, sendCourseInvitationEmail } = require('../utils/mailer');
+const { ensureCourseLearnerLink } = require('../utils/courseLearner');
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -75,6 +76,8 @@ const enrollInCourse = async (req, res, next) => {
       },
     });
 
+    await ensureCourseLearnerLink(prisma, { userId, courseId });
+
     return res.status(201).json({ success: true, data: { enrollment } });
   } catch (err) {
     next(err);
@@ -114,7 +117,9 @@ const getMyEnrollments = async (req, res, next) => {
       orderBy: { enrolledAt: 'desc' },
     });
 
-    const data = enrollments.map((e) => {
+    const data = enrollments
+      .filter((e) => !(e.course.accessRule === 'payment' && !e.isPaid))
+      .map((e) => {
       const { course, lessonProgress, ...enrollmentData } = e;
       const totalLessons = course.lessons.length;
       const completedLessons = lessonProgress.filter((lp) => lp.isCompleted).length;
@@ -133,7 +138,7 @@ const getMyEnrollments = async (req, res, next) => {
         totalLessons,
         completedLessons,
       };
-    });
+      });
 
     return res.json({ success: true, data: { enrollments: data } });
   } catch (err) {
@@ -261,6 +266,8 @@ const addAttendees = async (req, res, next) => {
               },
             });
           }
+
+          await ensureCourseLearnerLink(tx, { userId: user.id, courseId });
         }
 
         invited++;
@@ -468,6 +475,8 @@ const acceptInvitation = async (req, res, next) => {
           },
         });
       }
+
+      await ensureCourseLearnerLink(tx, { userId, courseId: invitation.courseId });
 
       return enr;
     });
