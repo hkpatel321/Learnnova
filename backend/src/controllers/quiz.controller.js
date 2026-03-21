@@ -200,7 +200,11 @@ const addQuestion = async (req, res, next) => {
       return res.status(access.status).json({ success: false, message: access.error });
     }
 
-    const { questionText, options } = req.body;
+    const questionText = req.body.questionText || 'New Question';
+    const options = req.body.options || [
+      { optionText: 'Option 1', isCorrect: true },
+      { optionText: 'Option 2', isCorrect: false }
+    ];
 
     // Validate options
     if (!Array.isArray(options) || options.length < 2) {

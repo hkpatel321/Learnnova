@@ -306,7 +306,7 @@ const uploadCoverImage = async (req, res, next) => {
       });
     }
 
-    const coverImageUrl = `/uploads/covers/${req.file.filename}`;
+    const coverImageUrl = `/uploads/${req.file.filename}`;
 
     await prisma.course.update({
       where: { id: req.params.id },
@@ -322,6 +322,133 @@ const uploadCoverImage = async (req, res, next) => {
   }
 };
 
+// ── 8. getCatalog (public — published courses) ──────────────────
+
+const getCatalog = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+
+    const where = { isPublished: true };
+    if (search) {
+      where.title = { contains: search, mode: 'insensitive' };
+    }
+
+    const courses = await prisma.course.findMany({
+      where,
+      include: {
+        responsible: { select: { id: true, name: true, avatarUrl: true } },
+        lessons: { select: { id: true, durationMins: true, lessonType: true } },
+        reviews: { select: { rating: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const data = courses.map((c) => {
+      const lessonCount = c.lessons.length;
+      const totalDurationMins = c.lessons.reduce(
+        (sum, l) => sum + (l.durationMins || 0),
+        0
+      );
+      const reviewCount = c.reviews.length;
+      const avgRating =
+        reviewCount > 0
+          ? parseFloat(
+              (c.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount).toFixed(2)
+            )
+          : 0;
+
+      const { lessons, reviews, responsible, ...rest } = c;
+      return {
+        ...rest,
+        instructor: responsible,
+        lessonCount,
+        totalDurationMins,
+        reviewCount,
+        avgRating,
+      };
+    });
+
+    return res.json({ success: true, data: { courses: data } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── 9. getCourseDetail (any authenticated user) ──────────────────
+
+const getCourseDetail = async (req, res, next) => {
+  try {
+    const course = await prisma.course.findUnique({
+      where: { id: req.params.id },
+      include: {
+        responsible: { select: { id: true, name: true, avatarUrl: true } },
+        lessons: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            attachments: { orderBy: { sortOrder: 'asc' } },
+            quiz: { select: { id: true } },
+          },
+        },
+        reviews: { select: { rating: true } },
+      },
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    const lessonCount = course.lessons.length;
+    const totalDurationMins = course.lessons.reduce(
+      (sum, l) => sum + (l.durationMins || 0),
+      0
+    );
+    const reviewCount = course.reviews.length;
+    const avgRating =
+      reviewCount > 0
+        ? parseFloat(
+            (course.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount).toFixed(2)
+          )
+        : 0;
+
+    // Map lessons to frontend-expected shape
+    const lessons = course.lessons.map((l) => ({
+      id: l.id,
+      title: l.title,
+      type: l.lessonType,
+      description: l.description,
+      videoUrl: l.videoUrl,
+      fileUrl: l.fileUrl,
+      durationMinutes: l.durationMins || 0,
+      allowDownload: l.allowDownload,
+      sortOrder: l.sortOrder,
+      quizId: l.quiz?.id || null,
+      attachments: l.attachments,
+    }));
+
+    const { reviews, responsible, ...rest } = course;
+
+    return res.json({
+      success: true,
+      data: {
+        course: {
+          ...rest,
+          instructor: responsible,
+          lessons,
+          lessonCount,
+          totalDurationMins,
+          reviewCount,
+          avgRating,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createCourse,
   getAllCourses,
@@ -330,4 +457,6 @@ module.exports = {
   togglePublish,
   deleteCourse,
   uploadCoverImage,
+  getCatalog,
+  getCourseDetail,
 };

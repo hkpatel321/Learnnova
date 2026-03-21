@@ -7,6 +7,16 @@ const courseController = require('../controllers/course.controller');
 
 const router = Router();
 
+// ── PUBLIC routes (no auth) ──────────────────────────────────────
+
+// GET /api/courses/catalog
+router.get('/catalog', courseController.getCatalog);
+
+// ── AUTHENTICATED any-role routes ────────────────────────────────
+
+// GET /api/courses/:id/detail  (any authenticated user — learner, instructor, admin)
+router.get('/:id/detail', authenticate, courseController.getCourseDetail);
+
 // ── POST /api/courses ────────────────────────────────────────────
 router.post(
   '/',

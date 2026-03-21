@@ -104,7 +104,21 @@ const getCourseProgress = async (req, res, next) => {
     const enrollment = await prisma.enrollment.findUnique({
       where: { userId_courseId: { userId, courseId } },
       include: {
-        course: { select: { lessons: { select: { id: true } } } },
+        course: {
+          select: {
+            title: true,
+            lessons: {
+              orderBy: { sortOrder: 'asc' },
+              select: {
+                id: true,
+                title: true,
+                lessonType: true,
+                durationMins: true,
+                sortOrder: true,
+              },
+            },
+          },
+        },
         lessonProgress: {
           select: { lessonId: true, isCompleted: true, completedAt: true },
         },
@@ -112,18 +126,34 @@ const getCourseProgress = async (req, res, next) => {
     });
 
     if (!enrollment) {
-      return res.status(403).json({ success: false, message: 'Not enrolled in this course' });
+      return res.status(404).json({ success: false, message: 'Not enrolled in this course' });
     }
 
     const totalLessons = enrollment.course.lessons.length;
-    const completedLessons = enrollment.lessonProgress.filter((lp) => lp.isCompleted).length;
-    const completionPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const completedLessonIds = enrollment.lessonProgress
+      .filter((lp) => lp.isCompleted)
+      .map((lp) => lp.lessonId);
+    const completionPct = totalLessons > 0 ? Math.round((completedLessonIds.length / totalLessons) * 100) : 0;
+
+    // Map lessons to frontend-expected shape
+    const lessons = enrollment.course.lessons.map((l) => ({
+      id: l.id,
+      title: l.title,
+      type: l.lessonType,
+      durationMinutes: l.durationMins || 0,
+      sortOrder: l.sortOrder,
+    }));
 
     return res.json({
       success: true,
       data: {
+        isEnrolled: true,
+        status: enrollment.status,
+        courseTitle: enrollment.course.title,
         completionPct,
+        completedLessonIds,
         lessonStatuses: enrollment.lessonProgress,
+        lessons,
       },
     });
   } catch (err) {

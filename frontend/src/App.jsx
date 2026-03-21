@@ -24,8 +24,25 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AppRouter />
-        <Toaster position="top-right" />
+        <div className="animate-fadeIn">
+          <AppRouter />
+        </div>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            success: {
+              duration: 3000,
+              style: { background: '#10B981', color: 'white' },
+            },
+            error: {
+              duration: 4000,
+              style: { background: '#EF4444', color: 'white' },
+            },
+            loading: {
+              style: { background: '#2D31D4', color: 'white' },
+            },
+          }}
+        />
       </BrowserRouter>
     </QueryClientProvider>
   );

@@ -10,8 +10,10 @@ import CourseCatalogPage from '../pages/public/CourseCatalogPage';
 import MyCoursesPage from '../pages/learner/MyCoursesPage';
 import CourseDetailPage from '../pages/learner/CourseDetailPage';
 import LessonPlayerPage from '../pages/learner/LessonPlayerPage';
+import LearnerLayout from '../components/layout/LearnerLayout';
 
 // Instructor Pages
+import BackofficeLayout from '../components/layout/BackofficeLayout';
 import CoursesPage from '../pages/instructor/CoursesPage';
 import CourseFormPage from '../pages/instructor/CourseFormPage';
 import ReportingPage from '../pages/instructor/ReportingPage';
@@ -38,67 +40,49 @@ const AppRouter = () => {
       {/* Public Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/courses" element={<CourseCatalogPage />} />
-      
-      {/* Protected Learner Routes */}
-      <Route
-        path="/my-courses"
-        element={
-          <ProtectedRoute allowedRoles={['learner']}>
-            <MyCoursesPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/courses/:courseId"
-        element={
-          <ProtectedRoute allowedRoles={['learner']}>
-            <CourseDetailPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/learn/:courseId/:lessonId"
-        element={
-          <ProtectedRoute allowedRoles={['learner']}>
-            <LessonPlayerPage />
-          </ProtectedRoute>
-        }
-      />
 
-      {/* Protected Instructor Routes */}
+      {/* Learner Layout Routes */}
+      <Route element={<LearnerLayout />}>
+        <Route path="/courses" element={<CourseCatalogPage />} />
+        <Route
+          path="/my-courses"
+          element={
+            <ProtectedRoute allowedRoles={['learner']}>
+              <MyCoursesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/courses/:courseId"
+          element={
+            <ProtectedRoute allowedRoles={['learner']}>
+              <CourseDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/learn/:courseId/:lessonId"
+          element={
+            <ProtectedRoute allowedRoles={['learner']}>
+              <LessonPlayerPage />
+            </ProtectedRoute>
+          }
+        />
+      </Route>
+
+      {/* Instructor / Admin — BackofficeLayout */}
       <Route
-        path="/backoffice/courses"
         element={
           <ProtectedRoute allowedRoles={['instructor', 'admin']}>
-            <CoursesPage />
+            <BackofficeLayout />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/backoffice/courses/new"
-        element={
-          <ProtectedRoute allowedRoles={['instructor', 'admin']}>
-            <CourseFormPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/backoffice/courses/:id"
-        element={
-          <ProtectedRoute allowedRoles={['instructor', 'admin']}>
-            <CourseFormPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/backoffice/reporting"
-        element={
-          <ProtectedRoute allowedRoles={['instructor', 'admin']}>
-            <ReportingPage />
-          </ProtectedRoute>
-        }
-      />
+      >
+        <Route path="/backoffice/courses" element={<CoursesPage />} />
+        <Route path="/backoffice/courses/new" element={<CourseFormPage />} />
+        <Route path="/backoffice/courses/:courseId" element={<CourseFormPage />} />
+        <Route path="/backoffice/reporting" element={<ReportingPage />} />
+      </Route>
 
       {/* Default route / redirects */}
       <Route path="/" element={<Navigate to="/courses" replace />} />

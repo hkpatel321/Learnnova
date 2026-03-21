@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, CheckCircle2, GraduationCap, User } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,20 +7,20 @@ import axios from '../../lib/axios';
 import useAuthStore from '../../store/authStore';
 
 const RegisterPage = () => {
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, control } = useForm();
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState('learner');
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  const password = watch('password', '');
+  const password = useWatch({ control, name: 'password', defaultValue: '' });
 
   const getPasswordStrength = () => {
     if (!password) return { color: 'bg-gray-200', text: '' };
     if (password.length < 6) return { color: 'bg-red-500 w-1/3', text: 'Weak' };
     
     // Check for symbols/numbers for strong password
-    const hasSymbolOrNumber = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?0-9]+/.test(password);
+    const hasSymbolOrNumber = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?0-9]+/.test(password);
     
     if (password.length >= 10 && hasSymbolOrNumber) {
       return { color: 'bg-green-500 w-full', text: 'Strong' };
@@ -34,20 +34,20 @@ const RegisterPage = () => {
   const onSubmit = async (data) => {
     try {
       // API call to register endpoint
-      const response = await axios.post('/api/auth/register', {
+      const response = await axios.post('/auth/register', {
         ...data,
         role: selectedRole
       });
       
-      const { token, user } = response.data;
+      const { accessToken, user } = response.data.data;
       
       // Auto-login on success
-      setAuth(user, token);
+      setAuth(user, accessToken);
       
-      toast.success('Account created successfully!');
+      toast.success('Account created! Welcome to Learnova 🎉');
       
       if (user.role === 'admin' || user.role === 'instructor') {
-        navigate('/instructor/courses');
+        navigate('/backoffice/courses');
       } else {
         navigate('/my-courses');
       }

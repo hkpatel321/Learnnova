@@ -93,10 +93,10 @@ const createLesson = async (req, res, next) => {
       data: {
         courseId,
         title,
-        lessonType,
+        lessonType: lessonType || req.body.type || 'video',
         description: description || null,
         videoUrl: videoUrl || null,
-        durationMins: durationMins ? parseInt(durationMins, 10) : null,
+        durationMins: durationMins ? parseInt(durationMins, 10) : (req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null),
         allowDownload: allowDownload || false,
         responsibleId: responsibleId || null,
         sortOrder,
@@ -139,14 +139,21 @@ const updateLesson = async (req, res, next) => {
     // Parse numeric fields
     if (data.durationMins !== undefined) {
       data.durationMins = data.durationMins ? parseInt(data.durationMins, 10) : null;
+    } else if (req.body.durationMinutes !== undefined) {
+      data.durationMins = req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null;
     }
+    
+    if (req.body.type) {
+      data.lessonType = req.body.type;
+    }
+    
     if (data.sortOrder !== undefined) {
       data.sortOrder = parseInt(data.sortOrder, 10);
     }
 
     // Handle file upload (document / image lesson types)
     if (req.file) {
-      data.fileUrl = `/uploads/lessons/${req.file.filename}`;
+      data.fileUrl = `/uploads/${req.file.filename}`;
     }
 
     const updated = await prisma.lesson.update({
@@ -234,7 +241,7 @@ const addAttachment = async (req, res, next) => {
 
     // If a file was uploaded, use its path instead
     if (req.file) {
-      url = `/uploads/attachments/${req.file.filename}`;
+      url = `/uploads/${req.file.filename}`;
     }
 
     if (!url) {

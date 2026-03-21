@@ -24,7 +24,7 @@ const useAuthStore = create((set) => ({
       try {
         const user = JSON.parse(userStr);
         set({ user, accessToken, isAuthenticated: true });
-      } catch (err) {
+      } catch {
         set({ user: null, accessToken: null, isAuthenticated: false });
         localStorage.removeItem('user');
         localStorage.removeItem('accessToken');

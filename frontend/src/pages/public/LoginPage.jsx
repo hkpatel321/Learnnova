@@ -5,6 +5,7 @@ import { Mail, Lock, Eye, EyeOff, CheckCircle2, GraduationCap } from 'lucide-rea
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 import useAuthStore from '../../store/authStore';
+import Spinner from '../../components/ui/Spinner';
 
 const LoginPage = () => {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
@@ -14,18 +15,19 @@ const LoginPage = () => {
 
   const onSubmit = async (data) => {
     try {
-      const response = await axios.post('/api/auth/login', data);
-      const { token, user } = response.data;
+      const response = await axios.post('/auth/login', data);
+      const { accessToken, user } = response.data.data;
       
-      setAuth(user, token);
+      setAuth(user, accessToken);
+      toast.success(`Welcome back, ${user?.name || 'learner'}! 👋`);
       
       if (user.role === 'admin' || user.role === 'instructor') {
-        navigate('/instructor/courses');
+        navigate('/backoffice/courses');
       } else {
         navigate('/my-courses');
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Invalid email or password');
+    } catch {
+      toast.error('Invalid email or password');
     }
   };
 
@@ -113,7 +115,7 @@ const LoginPage = () => {
                     }
                   })}
                   className={`block w-full pl-10 pr-3 py-2.5 border ${
-                    errors.email ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#2D31D4] focus:border-[#2D31D4]'
+                    errors.email ? 'border-red-400 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#2D31D4] focus:border-[#2D31D4]'
                   } rounded-lg text-sm transition-colors outline-none`}
                   placeholder="you@example.com"
                 />
@@ -139,7 +141,7 @@ const LoginPage = () => {
                   type={showPassword ? 'text' : 'password'}
                   {...register('password', { required: 'Password is required' })}
                   className={`block w-full pl-10 pr-10 py-2.5 border ${
-                    errors.password ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#2D31D4] focus:border-[#2D31D4]'
+                    errors.password ? 'border-red-400 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#2D31D4] focus:border-[#2D31D4]'
                   } rounded-lg text-sm transition-colors outline-none`}
                   placeholder="••••••••"
                 />
@@ -177,10 +179,7 @@ const LoginPage = () => {
               className="w-full flex justify-center items-center h-11 py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-[#2D31D4] hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2D31D4] disabled:opacity-70 disabled:cursor-not-allowed transition-colors font-semibold mt-2"
             >
               {isSubmitting ? (
-                 <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <Spinner size="sm" className="mr-2 [&_svg]:text-white" />
               ) : (
                 'Sign In'
               )}
