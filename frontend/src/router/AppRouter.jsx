@@ -10,6 +10,7 @@ import CourseCatalogPage from '../pages/public/CourseCatalogPage';
 import MyCoursesPage from '../pages/learner/MyCoursesPage';
 import CourseDetailPage from '../pages/learner/CourseDetailPage';
 import LessonPlayerPage from '../pages/learner/LessonPlayerPage';
+import ProfilePage from '../pages/learner/ProfilePage';
 import LearnerLayout from '../components/layout/LearnerLayout';
 
 // Instructor Pages
@@ -65,6 +66,14 @@ const AppRouter = () => {
           element={
             <ProtectedRoute allowedRoles={['learner']}>
               <LessonPlayerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute allowedRoles={['learner']}>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />
