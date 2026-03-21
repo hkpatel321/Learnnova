@@ -1,5 +1,30 @@
 const prisma = require('../config/db');
 const { getLearnerCourseAccess } = require('../utils/learnerAccess');
+const { ensureCourseLearnerLink, hasCourseLearnerLink } = require('../utils/courseLearner');
+
+const buildCourseSummary = (course) => {
+  const lessonCount = course.lessons.length;
+  const totalDurationMins = course.lessons.reduce(
+    (sum, l) => sum + (l.durationMins || 0),
+    0
+  );
+  const reviewCount = course.reviews.length;
+  const avgRating =
+    reviewCount > 0
+      ? parseFloat(
+          (course.reviews.reduce((sum, review) => sum + review.rating, 0) / reviewCount).toFixed(2)
+        )
+      : 0;
+  const viewCount = Number(course?._count?.learnerLinks ?? course?.viewsCount ?? 0);
+
+  return {
+    lessonCount,
+    totalDurationMins,
+    reviewCount,
+    avgRating,
+    viewCount,
+  };
+};
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -28,6 +53,8 @@ const courseWithStats = async (courseId) => {
     responsibleName: responsible?.name || null,
     lessonCount,
     totalDurationMins,
+    viewsCount: Number(_count.learnerLinks || rest.viewsCount || 0),
+    viewCount: Number(_count.learnerLinks || rest.viewsCount || 0),
     enrolledLearnerCount: _count.learnerLinks,
   };
 };
@@ -96,6 +123,8 @@ const getAllCourses = async (req, res, next) => {
         responsibleName: responsible?.name || null,
         lessonCount,
         totalDurationMins,
+        viewsCount: Number(_count.learnerLinks || rest.viewsCount || 0),
+        viewCount: Number(_count.learnerLinks || rest.viewsCount || 0),
         enrolledLearnerCount: _count.learnerLinks,
       };
     });
@@ -350,19 +379,7 @@ const getCatalog = async (req, res, next) => {
     });
 
     const data = courses.map((c) => {
-      const lessonCount = c.lessons.length;
-      const totalDurationMins = c.lessons.reduce(
-        (sum, l) => sum + (l.durationMins || 0),
-        0
-      );
-      const reviewCount = c.reviews.length;
-      const avgRating =
-        reviewCount > 0
-          ? parseFloat(
-              (c.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount).toFixed(2)
-            )
-          : 0;
-
+      const { lessonCount, totalDurationMins, reviewCount, avgRating, viewCount } = buildCourseSummary(c);
       const { lessons, reviews, responsible, _count, ...rest } = c;
       return {
         ...rest,
@@ -371,6 +388,8 @@ const getCatalog = async (req, res, next) => {
         totalDurationMins,
         reviewCount,
         avgRating,
+        viewCount,
+        viewsCount: viewCount,
         requiresPayment: c.accessRule === 'payment',
         enrolledLearnerCount: _count.learnerLinks,
       };
@@ -409,18 +428,35 @@ const getCourseDetail = async (req, res, next) => {
       });
     }
 
-    const lessonCount = course.lessons.length;
-    const totalDurationMins = course.lessons.reduce(
-      (sum, l) => sum + (l.durationMins || 0),
-      0
-    );
-    const reviewCount = course.reviews.length;
-    const avgRating =
-      reviewCount > 0
-        ? parseFloat(
-            (course.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount).toFixed(2)
-          )
-        : 0;
+    if (req.user?.role === 'learner') {
+      const alreadyCounted = await hasCourseLearnerLink(prisma, {
+        userId: req.user.id,
+        courseId: course.id,
+      });
+
+      if (!alreadyCounted) {
+        await prisma.$transaction(async (tx) => {
+          await ensureCourseLearnerLink(tx, {
+            userId: req.user.id,
+            courseId: course.id,
+          });
+
+          await tx.course.update({
+            where: { id: course.id },
+            data: {
+              viewsCount: {
+                increment: 1,
+              },
+            },
+          });
+        });
+
+        course._count.learnerLinks += 1;
+      }
+    }
+
+    const { lessonCount, totalDurationMins, reviewCount, avgRating, viewCount } =
+      buildCourseSummary(course);
 
     // Map lessons to frontend-expected shape
     const lessons = course.lessons.map((l) => ({
@@ -475,6 +511,8 @@ const getCourseDetail = async (req, res, next) => {
           totalDurationMins,
           reviewCount,
           avgRating,
+          viewCount,
+          viewsCount: viewCount,
           requiresPayment: course.accessRule === 'payment',
           enrolledLearnerCount: _count.learnerLinks,
           ...learnerAccess,
