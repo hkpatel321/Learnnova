@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2D31D4;
+  --color-primary-dark: #1a1dd6;
+  --color-primary-deeper: #0f1199;
+  --color-primary-light: #EEF0FF;
+  
+  --color-secondary: #F4F5FF;
+  --color-accent: #F59E0B;
+  --color-success: #10B981;
+
+  --font-sans: "Inter", sans-serif;
+  --font-heading: "Plus Jakarta Sans", sans-serif;
+}
+
+@layer base {
+  body {
+    @apply font-sans text-gray-900 bg-secondary antialiased;
+  }
+}
