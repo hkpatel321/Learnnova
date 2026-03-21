@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import LessonStatusIcon from '../components/LessonStatusIcon';
 import QuizPlayer from '../components/QuizPlayer';
 import api from '../lib/api';
+import { useSocket } from '../lib/useSocket';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -361,6 +362,9 @@ export default function LessonPlayer() {
   // Time tracking ref
   const timeIntervalRef = useRef(null);
 
+  // Socket.io for real-time progress
+  const socket = useSocket();
+
   // ── Fetch lesson content ──────────────────────────────────────────────────
   useEffect(() => {
     setLoadingLesson(true);
@@ -413,6 +417,34 @@ export default function LessonPlayer() {
       if (timeIntervalRef.current) clearInterval(timeIntervalRef.current);
     };
   }, [enrollmentId]);
+
+  // ⚡ Real-time progress sync — join course socket room
+  useEffect(() => {
+    if (!courseId || !socket) return;
+    socket.emit('join_course', { courseId });
+
+    const handleProgressUpdate = (data) => {
+      if (data.course_id !== courseId) return;
+      // Update progress map for whoever completed a lesson
+      // We get the lesson_id from the data but the server only sends enrollment-level data.
+      // Re-fetch lesson progress silently in background to stay in sync.
+      api.get(`/courses/${courseId}`)
+        .then(r => {
+          const map = {};
+          for (const lp of (r.data.lesson_progress ?? [])) {
+            map[lp.lesson_id] = lp.is_completed ? 'completed' : 'in_progress';
+          }
+          setProgressMap(map);
+        })
+        .catch(() => {});
+    };
+
+    socket.on('progress_update', handleProgressUpdate);
+    return () => {
+      socket.off('progress_update', handleProgressUpdate);
+      socket.emit('leave_course', { courseId });
+    };
+  }, [courseId, socket]);
 
   // ── Navigation helpers ────────────────────────────────────────────────────
   const currentIdx  = allLessons.findIndex(l => l.id === lessonId);

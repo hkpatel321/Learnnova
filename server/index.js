@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import { initDB } from './initDB.js';
@@ -15,7 +16,17 @@ import lessonsRoutes from './routes/lessons.js';
 import quizzesRoutes from './routes/quizzes.js';
 import reviewsRoutes from './routes/reviews.js';
 
+// Module A – Admin / Instructor route modules
+import adminCourses from './routes/admin/courses.js';
+import adminLessons from './routes/admin/lessons.js';
+import adminQuizzes from './routes/admin/quizzes.js';
+import adminAttendees from './routes/admin/attendees.js';
+import adminReporting from './routes/admin/reporting.js';
+import adminUsers from './routes/admin/users.js';
+import { initSocket } from './socket.js';
+
 const app = express();
+const httpServer = createServer(app);
 
 // ── Security & parsing middleware ────────────────────────────────────────────
 app.use(helmet());
@@ -27,7 +38,7 @@ app.use(
 );
 app.use(express.json());
 
-// ── Routes ───────────────────────────────────────────────────────────────────
+// ── Routes (Module B — Learner side) ─────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', coursesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
@@ -36,6 +47,14 @@ app.use('/api/quizzes', quizzesRoutes);
 
 // Reviews are nested under courses: /api/courses/:id/reviews
 app.use('/api/courses/:id/reviews', reviewsRoutes);
+
+// ── Routes (Module A — Admin / Instructor backoffice) ────────────────────────
+app.use('/api/admin/courses',   adminCourses);
+app.use('/api/admin/lessons',   adminLessons);
+app.use('/api/admin/quizzes',   adminQuizzes);
+app.use('/api/admin/attendees', adminAttendees);
+app.use('/api/admin/reporting', adminReporting);
+app.use('/api/admin/users',     adminUsers);
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -66,8 +85,9 @@ app.use((err, _req, res, _next) => {
 const PORT = Number(process.env.PORT) || 5000;
 
 await testConnection();
+initSocket(httpServer, process.env.CLIENT_URL || 'http://localhost:5173');
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`✅  Learnova API running on http://localhost:${PORT}`);
 });
 

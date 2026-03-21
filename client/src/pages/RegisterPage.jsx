@@ -5,7 +5,7 @@ import { setToken } from '../lib/auth';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [form, setForm]     = useState({ name: '', email: '', password: '' });
+  const [form, setForm]     = useState({ name: '', email: '', password: '', role: 'learner' });
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +24,11 @@ export default function RegisterPage() {
     try {
       const res = await api.post('/auth/register', form);
       setToken(res.data.token);
-      navigate('/my-courses');
+      if (res.data.user.role === 'admin' || res.data.user.role === 'instructor') {
+        navigate('/admin/courses');
+      } else {
+        navigate('/my-courses');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed. Please try again.');
     } finally {
@@ -60,6 +64,24 @@ export default function RegisterPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
+          
+          <div className="flex gap-4 p-1 bg-gray-50 border border-gray-200 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, role: 'learner' }))}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${form.role === 'learner' ? 'bg-white shadow-sm text-brand border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Learner
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, role: 'instructor' }))}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${form.role === 'instructor' ? 'bg-white shadow-sm text-brand border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Instructor
+            </button>
+          </div>
+
           <div>
             <label htmlFor="name" className="label">Full name</label>
             <input

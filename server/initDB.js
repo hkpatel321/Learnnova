@@ -50,18 +50,7 @@ export async function initDB() {
       );
     `);
 
-    // Courses constraints (safe to re-run via DO block)
-    await client.query(`
-      DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'chk_published_needs_website'
-        ) THEN
-          ALTER TABLE courses
-            ADD CONSTRAINT chk_published_needs_website
-            CHECK (is_published = FALSE OR (is_published = TRUE AND website_url IS NOT NULL));
-        END IF;
-      END $$;
-    `);
+    // chk_published_needs_website constraint removed — website_url is now optional for publishing
     await client.query(`
       DO $$ BEGIN
         IF NOT EXISTS (

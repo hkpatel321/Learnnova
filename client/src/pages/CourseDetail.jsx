@@ -68,7 +68,13 @@ function ProgressCard({ course, enrollment, lessons, progressMap, onEnroll, enro
     if (!enrolled) { onEnroll(); return; }
     // Find next non-completed lesson
     const next = lessons.find(l => progressMap[l.id] !== 'completed') ?? lessons[0];
-    if (next) navigate(`/learn/${course.id}/${next.id}`);
+    if (next) {
+      if (next.item_type === 'quiz_standalone') {
+        navigate(`/learn/${course.id}/quiz/${next.id}`);
+      } else {
+        navigate(`/learn/${course.id}/${next.id}`);
+      }
+    }
   }
 
   const ctaLabel = !loggedIn
@@ -84,16 +90,14 @@ function ProgressCard({ course, enrollment, lessons, progressMap, onEnroll, enro
           : 'Start Course';
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-[#1a24cc]/20 shadow-md p-5
-                    flex flex-col gap-4">
+    <div className="bg-white rounded-2xl border-2 border-[#1a24cc]/20 shadow-md p-5 flex flex-col gap-4">
       {/* Progress label */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">
           {enrolled ? `${pct}% Completed` : 'Not enrolled'}
         </span>
         {enrolled && pct === 100 && (
-          <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5
-                           rounded-full">✓ Done</span>
+          <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Done</span>
         )}
       </div>
 
@@ -151,7 +155,11 @@ function LessonRow({ lesson, index, courseId, status, enrolled, onEnrollThenGo }
     if (!enrolled) {
       onEnrollThenGo(lesson);
     } else {
-      navigate(`/learn/${courseId}/${lesson.id}`);
+      if (lesson.item_type === 'quiz_standalone') {
+        navigate(`/learn/${courseId}/quiz/${lesson.id}`);
+      } else {
+        navigate(`/learn/${courseId}/${lesson.id}`);
+      }
     }
   }
 
@@ -590,9 +598,9 @@ export default function CourseDetail() {
   const { user }   = useAuth();
 
   const [course,      setCourse]      = useState(null);
-  const [lessons,     setLessons]     = useState([]);
+  const [syllabusItems, setSyllabusItems] = useState([]);
   const [enrollment,  setEnrollment]  = useState(null);  // from /api/courses/:id
-  const [progressMap, setProgressMap] = useState({});    // lessonId → status string
+  const [progressMap, setProgressMap] = useState({});    // itemId → status string
   const [loading,     setLoading]     = useState(true);
   const [enrolling,   setEnrolling]   = useState(false);
   const [activeTab,   setActiveTab]   = useState('overview');
@@ -604,9 +612,18 @@ export default function CourseDetail() {
     setLoading(true);
     api.get(`/courses/${id}`)
       .then(r => {
-        const { course, lessons, enrollment, lesson_progress } = r.data;
+        const { course, lessons, quizzes, enrollment, lesson_progress } = r.data;
         setCourse(course);
-        setLessons(lessons ?? []);
+        
+        const sortedLessons = [...(lessons ?? [])]
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map(l => ({ ...l, item_type: 'lesson' }));
+        const standaloneQuizzes = (quizzes ?? [])
+          .filter(q => !q.lesson_id)
+          .map(q => ({ ...q, item_type: 'quiz_standalone' }));
+          
+        setSyllabusItems([...sortedLessons, ...standaloneQuizzes]);
+
         setEnrollment(enrollment ?? null);
 
         // Build map: lessonId → 'completed' | 'in_progress' | 'not_started'
@@ -647,15 +664,15 @@ export default function CourseDetail() {
     handleEnroll(lesson);
   }, [handleEnroll, loggedIn, navigate]);
 
-  // ── Filtered lessons (search) ─────────────────────────────────────────────
-  const filteredLessons = useMemo(() => {
-    if (!search.trim()) return lessons;
+  // ── Filtered items (search) ─────────────────────────────────────────────
+  const filteredItems = useMemo(() => {
+    if (!search.trim()) return syllabusItems;
     const q = search.toLowerCase();
-    return lessons.filter(l =>
+    return syllabusItems.filter(l =>
       l.title.toLowerCase().includes(q) ||
-      l.lesson_type?.toLowerCase().includes(q)
+      (l.lesson_type && l.lesson_type.toLowerCase().includes(q))
     );
-  }, [lessons, search]);
+  }, [syllabusItems, search]);
 
   // ── Cover gradient ────────────────────────────────────────────────────────
   const gradient = useMemo(() => coverGradient(course?.tags ?? []), [course]);
@@ -776,30 +793,36 @@ export default function CourseDetail() {
                 <div className="px-5 py-3.5 border-b border-dashed border-gray-200
                                 flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-700">
-                    {filteredLessons.length}{' '}
-                    Content{filteredLessons.length !== 1 ? 's' : ''}
+                    {filteredItems.length}{' '}
+                    Content{filteredItems.length !== 1 ? 's' : ''}
                   </span>
                   {!enrolled && (
                     <span className="text-xs text-gray-400 italic">
-                      Click a lesson to enroll &amp; start
+                      Click an item to enroll &amp; start
                     </span>
                   )}
                 </div>
 
                 {/* Lesson rows */}
                 <div className="divide-y divide-dashed divide-gray-100">
-                  {filteredLessons.length === 0 ? (
+                  {filteredItems.length === 0 ? (
                     <p className="py-8 text-center text-sm text-gray-400">
-                      No lessons match "{search}"
+                      No contents match "{search}"
                     </p>
                   ) : (
-                    filteredLessons.map((lesson, i) => (
-                      <div key={lesson.id} className="px-1">
+                    filteredItems.map((item, i) => (
+                      <div key={`${item.item_type}-${item.id}`} className="px-1 relative">
+                        {item.item_type === 'quiz_standalone' && (
+                          <div className="absolute left-6 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-brand rounded-full pointer-events-none" />
+                        )}
                         <LessonRow
-                          lesson={lesson}
+                          lesson={{
+                            ...item,
+                            lesson_type: item.item_type === 'quiz_standalone' ? 'quiz' : item.lesson_type
+                          }}
                           index={i + 1}
                           courseId={id}
-                          status={progressMap[lesson.id] ?? 'not_started'}
+                          status={progressMap[item.id] ?? 'not_started'}
                           enrolled={enrolled}
                           onEnrollThenGo={handleEnrollThenGo}
                         />
@@ -838,7 +861,7 @@ export default function CourseDetail() {
               <ProgressCard
                 course={course}
                 enrollment={enrollment}
-                lessons={lessons}
+                lessons={syllabusItems}
                 progressMap={progressMap}
                 onEnroll={() => handleEnroll(null)}
                 enrolling={enrolling}

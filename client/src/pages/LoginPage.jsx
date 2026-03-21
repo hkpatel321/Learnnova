@@ -20,7 +20,11 @@ export default function LoginPage() {
     try {
       const res = await api.post('/auth/login', form);
       setToken(res.data.token);
-      navigate('/my-courses');
+      if (res.data.user.role === 'admin' || res.data.user.role === 'instructor') {
+        navigate('/admin/courses');
+      } else {
+        navigate('/my-courses');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
     } finally {

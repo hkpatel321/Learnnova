@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { authRequired } from '../middleware/auth.js';
+import { getIO } from '../socket.js';
 
 const router = Router();
 
@@ -148,6 +149,19 @@ router.post('/:id/complete', async (req, res) => {
   );
 
   const { completion_pct, enrollment_status } = progressResult.rows[0];
+
+  // ⚡ Broadcast real-time progress update to all clients watching this course
+  const courseId = ownerCheck.rows[0].course_id;
+  const io = getIO();
+  if (io) {
+    io.to(`course:${courseId}`).emit('progress_update', {
+      enrollment_id,
+      course_id:        courseId,
+      user_id,
+      completion_pct,
+      enrollment_status,
+    });
+  }
 
   res.json({
     success: true,

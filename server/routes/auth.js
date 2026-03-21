@@ -9,7 +9,11 @@ const SALT_ROUNDS = 10;
 
 // ── POST /api/auth/register ──────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, role = 'learner' } = req.body;
+
+  if (!['learner', 'instructor', 'admin'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role provided.' });
+  }
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are required.' });
@@ -18,7 +22,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   }
 
-  // Check duplicate email
+
   const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
   if (existing.rowCount > 0) {
     return res.status(409).json({ error: 'An account with this email already exists.' });
@@ -28,9 +32,9 @@ router.post('/register', async (req, res) => {
 
   const result = await query(
     `INSERT INTO users (name, email, password_hash, role)
-     VALUES ($1, $2, $3, 'learner')
+     VALUES ($1, $2, $3, $4)
      RETURNING id, name, email, role, avatar_url, total_points`,
-    [name.trim(), email.toLowerCase(), password_hash],
+    [name.trim(), email.toLowerCase(), password_hash, role],
   );
 
   const user = result.rows[0];
@@ -39,7 +43,7 @@ router.post('/register', async (req, res) => {
   res.status(201).json({ token, user });
 });
 
-// ── POST /api/auth/login ─────────────────────────────────────────────────────
+
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -73,10 +77,7 @@ router.post('/login', async (req, res) => {
   res.json({ token, user });
 });
 
-// ── GET /api/auth/me ─────────────────────────────────────────────────────────
-// Joins users with vw_learner_badges to return badge level alongside profile.
-// vw_learner_badges only contains rows where role = 'learner'; for other roles
-// we fall back to the users table alone so the endpoint is safe for all roles.
+
 router.get('/me', authRequired, async (req, res) => {
   const result = await query(
     `SELECT
@@ -101,7 +102,6 @@ router.get('/me', authRequired, async (req, res) => {
   res.json({ user: result.rows[0] });
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 function signToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },

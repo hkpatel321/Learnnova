@@ -9,13 +9,13 @@
   --brand-light: #eef2ff;
   --radius:      0.5rem;
 
-  /* Neutral palette */
-  --bg:          #0f1117;
-  --bg-surface:  #1a1d27;
-  --bg-card:     #21253a;
-  --border:      #2e3250;
-  --text:        #e8eaf6;
-  --text-muted:  #8b93b8;
+  /* Neutral palette — light theme */
+  --bg:          #f8f9ff;
+  --bg-surface:  #ffffff;
+  --bg-card:     #ffffff;
+  --border:      #d1d5db;
+  --text:        #111827;
+  --text-muted:  #6b7280;
 }
 
 /* ── Base resets ──────────────────────────────────────────────────────────── */
@@ -25,8 +25,8 @@ html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  background-color: var(--bg);
-  color: var(--text);
+  background-color: #f8f9ff;
+  color: #111827;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -62,14 +62,14 @@ body {
 
   /* Form inputs */
   .input {
-    @apply w-full rounded-lg border border-[var(--border)]
-           bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text)]
-           placeholder:text-[var(--text-muted)]
-           focus:outline-none focus:ring-2 focus:ring-brand
+    @apply w-full rounded-lg border border-gray-300
+           bg-white px-4 py-2.5 text-sm text-gray-900
+           placeholder:text-gray-400
+           focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand
            transition-all duration-150;
   }
   .label {
-    @apply block text-sm font-medium text-[var(--text-muted)] mb-1.5;
+    @apply block text-sm font-medium text-gray-700 mb-1.5;
   }
 
   /* Badges */
