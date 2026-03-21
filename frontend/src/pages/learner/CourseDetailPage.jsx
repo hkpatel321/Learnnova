@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Loader2, Search, Star, X, Check } from 'lucide-react';
+import { Loader2, Search, Star, Trash2, X, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 import useAuthStore from '../../store/authStore';
@@ -77,7 +77,7 @@ const ReviewModal = ({ open, onOpenChange, onSubmit, isSubmitting }) => {
       toast.error('Please select a rating');
       return;
     }
-    onSubmit({ rating, comment: reviewText }, () => {
+    onSubmit({ rating, reviewText }, () => {
       setRating(5);
       setReviewText('');
     });
@@ -144,6 +144,7 @@ export default function CourseDetailPage() {
   const [lessonSearch, setLessonSearch] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [visibleReviews, setVisibleReviews] = useState(5);
+  const [deletingReviewId, setDeletingReviewId] = useState(null);
   const handledStripeSessionIdRef = useRef(null);
   const stripeStatus = searchParams.get('stripe_status');
   const stripeSessionId = searchParams.get('session_id');
@@ -186,7 +187,27 @@ export default function CourseDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['course-reviews', courseId] });
       setShowReviewModal(false);
     },
-    onError: () => toast.error('Failed to submit review'),
+    onError: (error) => {
+      const message = error?.response?.data?.message || 'Failed to submit review';
+      toast.error(message);
+    },
+  });
+
+  const deleteReviewMutation = useMutation({
+    mutationFn: async (reviewId) => axios.delete(`/courses/${courseId}/reviews/${reviewId}`),
+    onSuccess: async () => {
+      toast.success('Review deleted');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['course-reviews', courseId] }),
+        queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
+      ]);
+      setDeletingReviewId(null);
+    },
+    onError: (error) => {
+      setDeletingReviewId(null);
+      const message = error?.response?.data?.message || 'Failed to delete review';
+      toast.error(message);
+    },
   });
 
   const enrollMutation = useMutation({
@@ -306,6 +327,7 @@ export default function CourseDetailPage() {
     (reviews.length ? reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / reviews.length : 0);
   const reviewCount = Number((course?.review_count ?? course?.reviewCount ?? reviews.length) || 0);
   const lessonCount = Number((course?.lesson_count ?? lessons.length) || 0);
+  const viewCount = Number((course?.view_count ?? course?.viewCount ?? course?.viewsCount ?? 0) || 0);
   const totalDuration = Number(
     course?.total_duration_mins ??
       course?.totalDurationMinutes ??
@@ -363,6 +385,7 @@ export default function CourseDetailPage() {
 
   const completedCount = lessons.filter((lesson) => completedLessonIds.has(lesson.id)).length;
   const remainingCount = Math.max(0, lessons.length - completedCount);
+  const canManageCourseReviews = user?.role === 'instructor' && course?.instructor?.id === user?.id;
 
   const onLessonClick = (lesson) => {
     if (!canAccessCourse && isRestricted) {
@@ -475,6 +498,7 @@ export default function CourseDetailPage() {
 
             <div className="mt-4 flex flex-wrap gap-6 text-sm text-white/80">
               <span>⭐ {avgRating.toFixed(1)} ({reviewCount} reviews)</span>
+              <span>👁 {viewCount} views</span>
               <span>📚 {lessonCount} lessons</span>
               <span>⏱ {totalDuration} min</span>
             </div>
@@ -676,9 +700,31 @@ export default function CourseDetailPage() {
                           <StarsDisplay rating={Number(review.rating || 0)} size={14} />
                         </div>
                       </div>
-                      <span className="text-xs text-gray-500">{formatDate(review.createdAt || review.created_at)}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-500">
+                          {formatDate(review.createdAt || review.created_at)}
+                        </span>
+                        {(user?.role === 'learner' && review.userId === user?.id) || canManageCourseReviews ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const confirmed = window.confirm('Delete this review? This action cannot be undone.');
+                              if (!confirmed) return;
+                              setDeletingReviewId(review.id);
+                              deleteReviewMutation.mutate(review.id);
+                            }}
+                            disabled={deleteReviewMutation.isPending}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {deletingReviewId === review.id && deleteReviewMutation.isPending ? 'Deleting...' : 'Delete'}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                    <p className="mt-2 text-sm text-gray-700">{review.comment || review.text || ''}</p>
+                    <p className="mt-2 text-sm text-gray-700">
+                      {review.reviewText || review.comment || review.text || ''}
+                    </p>
                   </div>
                 ))}
                 {visibleReviews < reviews.length ? (
