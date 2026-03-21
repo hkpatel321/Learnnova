@@ -4,6 +4,9 @@ import useAuthStore from '../store/authStore';
 // Public Pages
 import LoginPage from '../pages/public/LoginPage';
 import RegisterPage from '../pages/public/RegisterPage';
+import ForgotPasswordPage from '../pages/public/ForgotPasswordPage';
+import ResetPasswordPage from '../pages/public/ResetPasswordPage';
+import InvitationAcceptPage from '../pages/public/InvitationAcceptPage';
 
 // Learner Pages
 import CourseCatalogPage from '../pages/public/CourseCatalogPage';
@@ -40,6 +43,9 @@ const AppRouter = () => {
       {/* Public Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
 
       {/* Learner Layout Routes */}
       <Route element={<LearnerLayout />}>
@@ -55,7 +61,7 @@ const AppRouter = () => {
         <Route
           path="/courses/:courseId"
           element={
-            <ProtectedRoute allowedRoles={['learner']}>
+            <ProtectedRoute allowedRoles={['learner', 'instructor', 'admin']}>
               <CourseDetailPage />
             </ProtectedRoute>
           }

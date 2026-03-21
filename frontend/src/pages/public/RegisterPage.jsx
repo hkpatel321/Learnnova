@@ -4,12 +4,21 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, CheckCircle2, GraduationCap, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { applyApiFieldErrors, getApiErrorMessage } from '../../lib/apiError';
 import useAuthStore from '../../store/authStore';
 
 const RegisterPage = () => {
-  const { register, handleSubmit, formState: { errors, isSubmitting }, control } = useForm();
+  const {
+    register,
+    handleSubmit,
+    setError,
+    clearErrors,
+    formState: { errors, isSubmitting },
+    control,
+  } = useForm();
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState('learner');
+  const [serverMessage, setServerMessage] = useState('');
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
 
@@ -18,55 +27,62 @@ const RegisterPage = () => {
   const getPasswordStrength = () => {
     if (!password) return { color: 'bg-gray-200', text: '' };
     if (password.length < 6) return { color: 'bg-red-500 w-1/3', text: 'Weak' };
-    
-    // Check for symbols/numbers for strong password
+
     const hasSymbolOrNumber = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?0-9]+/.test(password);
-    
+
     if (password.length >= 10 && hasSymbolOrNumber) {
       return { color: 'bg-green-500 w-full', text: 'Strong' };
     }
-    
+
     return { color: 'bg-amber-500 w-2/3', text: 'Good' };
   };
 
   const strength = getPasswordStrength();
 
   const onSubmit = async (data) => {
+    setServerMessage('');
+    clearErrors('root');
+
     try {
-      // API call to register endpoint
       const response = await axios.post('/auth/register', {
         ...data,
-        role: selectedRole
+        role: selectedRole,
       });
-      
-      const { accessToken, user } = response.data.data;
-      
-      // Auto-login on success
-      setAuth(user, accessToken);
-      
-      toast.success('Account created! Welcome to Learnova 🎉');
-      
+
+      const { accessToken, refreshToken, user } = response.data?.data || {};
+
+      if (!accessToken || !user) {
+        throw new Error('Invalid registration response');
+      }
+
+      setAuth(user, accessToken, refreshToken);
+      toast.success('Account created! Welcome to Learnova');
+
       if (user.role === 'admin' || user.role === 'instructor') {
         navigate('/backoffice/courses');
       } else {
         navigate('/my-courses');
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      const hasFieldErrors = applyApiFieldErrors(error, setError);
+      const message = getApiErrorMessage(error, 'Registration failed');
+
+      if (!hasFieldErrors) {
+        setServerMessage(message);
+      }
+
+      toast.error(message);
     }
   };
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-white font-inter">
-      {/* Left Panel */}
       <div className="md:w-1/2 bg-[#2D31D4] text-white p-8 md:p-16 flex flex-col relative overflow-hidden hidden md:flex justify-between">
-        {/* Logo */}
         <div className="flex items-center gap-2 z-10">
           <GraduationCap className="w-8 h-8 text-white" />
           <span className="text-2xl font-bold font-plus-jakarta-sans tracking-tight">Learnova</span>
         </div>
 
-        {/* Content */}
         <div className="flex-1 flex flex-col justify-center mt-12 md:mt-0 z-10">
           <h1 className="text-4xl md:text-[48px] font-extrabold font-plus-jakarta-sans mb-4 leading-tight text-white">
             Learn Without Limits
@@ -89,7 +105,6 @@ const RegisterPage = () => {
           </div>
         </div>
 
-        {/* Abstract Wave Background */}
         <svg
           className="absolute bottom-0 right-0 w-full h-auto text-[#1E2299] opacity-40 pointer-events-none"
           viewBox="0 0 400 300"
@@ -100,15 +115,13 @@ const RegisterPage = () => {
         </svg>
       </div>
 
-       {/* Mobile Header (Only visible on mobile) */}
-       <div className="md:hidden bg-[#2D31D4] text-white p-6 flex flex-col items-center justify-center relative overflow-hidden">
-         <div className="flex items-center gap-2 z-10">
+      <div className="md:hidden bg-[#2D31D4] text-white p-6 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="flex items-center gap-2 z-10">
           <GraduationCap className="w-8 h-8 text-white" />
           <span className="text-2xl font-bold font-plus-jakarta-sans tracking-tight">Learnova</span>
         </div>
       </div>
 
-      {/* Right Panel */}
       <div className="md:w-1/2 flex items-center justify-center p-8 md:p-12 overflow-y-auto w-full bg-white">
         <div className="w-full max-w-md">
           <div className="mb-6 text-center md:text-left">
@@ -120,9 +133,14 @@ const RegisterPage = () => {
             </p>
           </div>
 
+          {serverMessage && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {serverMessage}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-             {/* Role Selector */}
-             <div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 I am a...
               </label>
@@ -131,8 +149,8 @@ const RegisterPage = () => {
                   type="button"
                   onClick={() => setSelectedRole('learner')}
                   className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                    selectedRole === 'learner' 
-                      ? 'border-[#2D31D4] bg-[#EEF0FF]' 
+                    selectedRole === 'learner'
+                      ? 'border-[#2D31D4] bg-[#EEF0FF]'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
@@ -143,8 +161,8 @@ const RegisterPage = () => {
                   type="button"
                   onClick={() => setSelectedRole('instructor')}
                   className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                    selectedRole === 'instructor' 
-                      ? 'border-[#2D31D4] bg-[#EEF0FF]' 
+                    selectedRole === 'instructor'
+                      ? 'border-[#2D31D4] bg-[#EEF0FF]'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
@@ -154,7 +172,6 @@ const RegisterPage = () => {
               </div>
             </div>
 
-            {/* Full Name Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Full Name
@@ -177,7 +194,6 @@ const RegisterPage = () => {
               )}
             </div>
 
-            {/* Email Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Email
@@ -188,7 +204,7 @@ const RegisterPage = () => {
                 </div>
                 <input
                   type="email"
-                  {...register('email', { 
+                  {...register('email', {
                     required: 'Email is required',
                     pattern: {
                       value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
@@ -206,7 +222,6 @@ const RegisterPage = () => {
               )}
             </div>
 
-            {/* Password Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Password
@@ -217,7 +232,7 @@ const RegisterPage = () => {
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  {...register('password', { 
+                  {...register('password', {
                     required: 'Password is required',
                     minLength: {
                       value: 6,
@@ -241,16 +256,13 @@ const RegisterPage = () => {
                   )}
                 </button>
               </div>
-              
-              {/* Password Strength Indicator */}
+
               <div className="mt-2 h-1 w-full bg-gray-200 rounded-full overflow-hidden">
-                 <div 
-                  className={`h-full transition-all duration-300 ${strength.color}`}
-                 ></div>
+                <div className={`h-full transition-all duration-300 ${strength.color}`}></div>
               </div>
-              
+
               <div className="flex justify-between items-center mt-1">
-                 {errors.password ? (
+                {errors.password ? (
                   <p className="text-[12px] text-red-500">{errors.password.message}</p>
                 ) : (
                   <p className="text-[12px] text-gray-500">{strength.text}</p>
@@ -258,7 +270,6 @@ const RegisterPage = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={isSubmitting}

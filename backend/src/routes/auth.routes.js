@@ -45,6 +45,33 @@ router.post(
   authController.login
 );
 
+router.post(
+  '/forgot-password',
+  [
+    body('email')
+      .isEmail()
+      .normalizeEmail()
+      .withMessage('A valid email is required'),
+  ],
+  validate,
+  authController.forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  [
+    body('token')
+      .trim()
+      .notEmpty()
+      .withMessage('Reset token is required'),
+    body('password')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters'),
+  ],
+  validate,
+  authController.resetPassword
+);
+
 // ── POST /api/auth/refresh ───────────────────────────────────────
 router.post('/refresh', authController.refreshToken);
 

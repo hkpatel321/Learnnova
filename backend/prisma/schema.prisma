@@ -12,6 +12,8 @@ model User {
   name         String
   email        String   @unique
   passwordHash String   @map("password_hash")
+  passwordResetTokenHash String?   @map("password_reset_token_hash")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
   role         Role     @default(learner)
   avatarUrl    String?  @map("avatar_url")
   totalPoints  Int      @default(0) @map("total_points")
@@ -26,6 +28,7 @@ model User {
   lessonProgress      LessonProgress[]
   quizAttempts        QuizAttempt[]
   reviews             Review[]
+  payments            Payment[]
   invitationsSent     CourseInvitation[]  @relation("InvitedBy")
   invitationsReceived CourseInvitation[]  @relation("InvitedUser")
 
@@ -63,6 +66,7 @@ model Course {
   enrollments  Enrollment[]
   invitations  CourseInvitation[]
   reviews      Review[]
+  payments     Payment[]
 
   @@map("courses")
 }
@@ -198,6 +202,7 @@ model Enrollment {
   course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
   lessonProgress LessonProgress[]
   quizAttempts   QuizAttempt[]
+  payments       Payment[]
 
   @@unique([userId, courseId])
   @@map("enrollments")
@@ -207,6 +212,43 @@ enum EnrollmentStatus {
   not_started
   in_progress
   completed
+}
+
+enum PaymentProvider {
+  razorpay
+  stripe
+}
+
+enum PaymentStatus {
+  created
+  verified
+  failed
+}
+
+model Payment {
+  id                String          @id @default(uuid())
+  userId            String          @map("user_id")
+  courseId          String          @map("course_id")
+  enrollmentId      String?         @map("enrollment_id")
+  provider          PaymentProvider @default(stripe)
+  status            PaymentStatus   @default(created)
+  currency          String          @default("INR")
+  amount            Decimal         @db.Decimal(10, 2)
+  receipt           String?         @map("receipt")
+  providerOrderId   String          @unique @map("provider_order_id")
+  providerPaymentId String?         @unique @map("provider_payment_id")
+  providerSignature String?         @map("provider_signature")
+  providerPayload   Json?           @map("provider_payload")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  paidAt            DateTime?       @map("paid_at")
+  failedAt          DateTime?       @map("failed_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course     Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  enrollment Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+
+  @@map("payments")
 }
 
 model LessonProgress {
