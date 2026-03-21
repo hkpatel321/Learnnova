@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Loader2, Star, X } from 'lucide-react';
+import { Check, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 
@@ -28,6 +28,60 @@ const getBadgeMeta = (points) => {
   return { current, next, progress: Math.max(0, Math.min(100, progress)) };
 };
 
+const getQuizStorageKey = (quizId) => `learnnova.quiz-progress.${quizId}`;
+
+const readSavedQuizProgress = (quizId) => {
+  if (!quizId || typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getQuizStorageKey(quizId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const clearSavedQuizProgress = (quizId) => {
+  if (!quizId || typeof window === 'undefined') return;
+  window.localStorage.removeItem(getQuizStorageKey(quizId));
+};
+
+const normalizeQuizPayload = (payload, fallbackQuizId) => {
+  const source = payload?.quiz || payload || {};
+  const questions = Array.isArray(source.questions)
+    ? source.questions.map((question) => ({
+        ...question,
+        text: question.questionText || question.question_text || question.text || '',
+        options: Array.isArray(question.options)
+          ? question.options.map((option) => ({
+              ...option,
+              text: option.optionText || option.option_text || option.text || '',
+            }))
+          : [],
+      }))
+    : [];
+
+  return {
+    id: source.id || fallbackQuizId,
+    title: source.title || 'Quiz',
+    questions,
+    pointsFirstAttempt:
+      payload?.rewards?.attempt1 ?? source.pointsAttempt1 ?? payload?.points_1 ?? defaultPoints.points_1,
+    pointsSecondAttempt:
+      payload?.rewards?.attempt2 ?? source.pointsAttempt2 ?? payload?.points_2 ?? defaultPoints.points_2,
+    pointsThirdAttempt:
+      payload?.rewards?.attempt3 ?? source.pointsAttempt3 ?? payload?.points_3 ?? defaultPoints.points_3,
+    pointsFourthPlusAttempt:
+      payload?.rewards?.attempt4plus ?? source.pointsAttempt4plus ?? payload?.points_4 ?? defaultPoints.points_4,
+    attemptCount: Number(payload?.attemptCount ?? payload?.attempt_count ?? source.attemptCount ?? 0),
+    attempts: Array.isArray(payload?.attempts || source.attempts) ? payload?.attempts || source.attempts : [],
+    alreadyCompleted: Boolean(payload?.alreadyCompleted || payload?.already_completed || source.alreadyCompleted || source.already_completed),
+    bestCorrect: Number(payload?.bestCorrect ?? payload?.best_correct ?? source.bestCorrect ?? 0),
+    bestPoints: Number(payload?.bestPoints ?? payload?.best_points ?? source.bestPoints ?? 0),
+    completedAt: payload?.completedAt || payload?.completed_at || source.completedAt || source.completed_at || null,
+  };
+};
+
 const QuizPlayer = ({ quizId, onComplete }) => {
   const [viewState, setViewState] = useState('intro');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -36,37 +90,36 @@ const QuizPlayer = ({ quizId, onComplete }) => {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [countUpPoints, setCountUpPoints] = useState(0);
   const [runtimeQuiz, setRuntimeQuiz] = useState(null);
+  const [savedProgress, setSavedProgress] = useState(() => readSavedQuizProgress(quizId));
+  const [fullscreenPrompt, setFullscreenPrompt] = useState(false);
+  const [tabWarningVisible, setTabWarningVisible] = useState(false);
+  const [isEndingQuiz, setIsEndingQuiz] = useState(false);
 
-  const { data: quizMeta } = useQuery({
+  const { data: quizMeta, isLoading: quizLoading } = useQuery({
     queryKey: ['quiz-player-meta', quizId],
     queryFn: async () => {
-      try {
-        const res = await axios.get(`/api/quizzes/${quizId}`);
-        return res.data;
-      } catch {
-        return {
-          id: quizId,
-          title: 'Quiz',
-          questions: [],
-          ...defaultPoints,
-          attempt_count: 0,
-          attempts: [],
-        };
-      }
+      const res = await axios.get(`/quizzes/${quizId}`);
+      return normalizeQuizPayload(res.data?.data, quizId);
     },
     enabled: !!quizId,
+    retry: false,
   });
 
-  const quiz = runtimeQuiz || quizMeta;
+  const quiz = runtimeQuiz || quizMeta || normalizeQuizPayload(null, quizId);
   const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
   const totalQuestions = questions.length;
-  const attemptCount = Number(quiz?.attempt_count || quiz?.attemptCount || 0);
+  const attemptCount = Number(quiz?.attemptCount || quiz?.attempt_count || 0);
   const attempts = quiz?.attempts || [];
-  const points1 = Number(quiz?.points_1 ?? quiz?.pointsFirstAttempt ?? defaultPoints.points_1);
-  const points2 = Number(quiz?.points_2 ?? quiz?.pointsSecondAttempt ?? defaultPoints.points_2);
-  const points3 = Number(quiz?.points_3 ?? quiz?.pointsThirdAttempt ?? defaultPoints.points_3);
-  const points4 = Number(quiz?.points_4 ?? quiz?.pointsFourthPlusAttempt ?? defaultPoints.points_4);
+  const points1 = Number(quiz?.pointsFirstAttempt ?? quiz?.points_1 ?? defaultPoints.points_1);
+  const points2 = Number(quiz?.pointsSecondAttempt ?? quiz?.points_2 ?? defaultPoints.points_2);
+  const points3 = Number(quiz?.pointsThirdAttempt ?? quiz?.points_3 ?? defaultPoints.points_3);
+  const points4 = Number(quiz?.pointsFourthPlusAttempt ?? quiz?.points_4 ?? defaultPoints.points_4);
   const currentQuestion = questions[currentIndex];
+  const resumePromptVisible = !!(
+    savedProgress?.selectedAnswers &&
+    Object.keys(savedProgress.selectedAnswers).length > 0 &&
+    !(quiz?.already_completed || quiz?.alreadyCompleted)
+  );
 
   useEffect(() => {
     if (quiz?.already_completed || quiz?.alreadyCompleted) {
@@ -74,6 +127,24 @@ const QuizPlayer = ({ quizId, onComplete }) => {
       return () => clearTimeout(timer);
     }
   }, [quiz?.already_completed, quiz?.alreadyCompleted]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSavedProgress(readSavedQuizProgress(quizId));
+      setSelectedAnswers({});
+      setCurrentIndex(0);
+      setResultData(null);
+      setReviewOpen(false);
+      setCountUpPoints(0);
+      setRuntimeQuiz(null);
+      setFullscreenPrompt(false);
+      setTabWarningVisible(false);
+      setIsEndingQuiz(false);
+      setViewState('intro');
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [quizId]);
 
   useEffect(() => {
     if (viewState !== 'result' || !resultData?.passed) return;
@@ -100,19 +171,121 @@ const QuizPlayer = ({ quizId, onComplete }) => {
     return () => clearTimeout(syncTimer);
   }, [viewState, resultData]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !quizId) return;
+    if (viewState !== 'question') return;
+
+    const payload = {
+      quizId,
+      selectedAnswers,
+      currentIndex,
+      savedAt: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem(getQuizStorageKey(quizId), JSON.stringify(payload));
+  }, [quizId, viewState, selectedAnswers, currentIndex]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (viewState !== 'question') return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [viewState]);
+
+  const requestFullscreen = async () => {
+    if (typeof document === 'undefined') return false;
+    if (document.fullscreenElement) return true;
+
+    try {
+      await document.documentElement.requestFullscreen();
+      setFullscreenPrompt(false);
+      return true;
+    } catch {
+      setFullscreenPrompt(true);
+      return false;
+    }
+  };
+
+  const exitFullscreen = async () => {
+    if (typeof document === 'undefined' || !document.fullscreenElement) return;
+
+    try {
+      await document.exitFullscreen();
+    } catch {
+      // Ignore exit failures and let the browser settle naturally.
+    }
+  };
+
+  useEffect(() => {
+    if (viewState !== 'question') return undefined;
+
+    const fullscreenTimer = setTimeout(() => {
+      requestFullscreen();
+    }, 0);
+
+    const handleFullscreenChange = () => {
+      if (isEndingQuiz) return;
+      if (!document.fullscreenElement) {
+        setFullscreenPrompt(true);
+      } else {
+        setFullscreenPrompt(false);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (isEndingQuiz) return;
+      if (document.hidden) return;
+
+      setTabWarningVisible(true);
+      toast.error('Tab switching is disabled during the quiz. Return to the quiz or end it.');
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearTimeout(fullscreenTimer);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [viewState, isEndingQuiz]);
+
+  const handleEndQuiz = async () => {
+    setIsEndingQuiz(true);
+    clearSavedQuizProgress(quizId);
+    setSavedProgress(null);
+    setSelectedAnswers({});
+    setCurrentIndex(0);
+    setResultData(null);
+    setReviewOpen(false);
+    setFullscreenPrompt(false);
+    setTabWarningVisible(false);
+    setViewState('intro');
+    await exitFullscreen();
+    setIsEndingQuiz(false);
+  };
+
   const startMutation = useMutation({
     mutationFn: async () => {
-      const res = await axios.get(`/api/quiz-attempts/${quizId}/start`);
-      return res.data;
+      const res = await axios.get(`/quiz-attempts/${quizId}/start`);
+      return normalizeQuizPayload(res.data?.data, quizId);
     },
     onSuccess: (data) => {
-      setRuntimeQuiz((prev) => ({
-        ...(prev || quiz),
-        ...(data.quiz || {}),
-        questions: data.questions || data.quiz?.questions || prev?.questions || quiz.questions || [],
-      }));
-      setSelectedAnswers({});
-      setCurrentIndex(0);
+      setRuntimeQuiz(data);
+      if (savedProgress?.selectedAnswers && Object.keys(savedProgress.selectedAnswers).length > 0) {
+        const nextQuestions = data.questions || quiz.questions || [];
+        setSelectedAnswers(savedProgress.selectedAnswers || {});
+        setCurrentIndex(Math.max(0, Math.min(savedProgress.currentIndex || 0, Math.max(nextQuestions.length - 1, 0))));
+      } else {
+        setSelectedAnswers({});
+        setCurrentIndex(0);
+      }
       setReviewOpen(false);
       setViewState('question');
     },
@@ -121,13 +294,13 @@ const QuizPlayer = ({ quizId, onComplete }) => {
 
   const submitMutation = useMutation({
     mutationFn: async (payload) => {
-      const res = await axios.post(`/api/quiz-attempts/${quizId}/submit`, payload);
-      return res.data;
+      const res = await axios.post(`/quiz-attempts/${quizId}/submit`, payload);
+      return res.data?.data || res.data;
     },
     onSuccess: (data) => {
-      const correct = Number(data.correct ?? data.correctCount ?? 0);
-      const total = Number(data.total ?? totalQuestions);
-      const passed = data.passed ?? correct >= total;
+      const correct = Number(data.correctAnswers ?? data.correct ?? data.correctCount ?? 0);
+      const total = Number(data.totalQuestions ?? data.total ?? totalQuestions);
+      const passed = Boolean(data.passed ?? (correct >= total && total > 0));
       const pointsEarned = Number(data.pointsEarned ?? data.points_earned ?? 0);
       const attemptedAt = data.attemptedAt || new Date().toISOString();
 
@@ -154,6 +327,11 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         ],
       }));
 
+      clearSavedQuizProgress(quizId);
+      setSavedProgress(null);
+      exitFullscreen();
+      setFullscreenPrompt(false);
+      setTabWarningVisible(false);
       setReviewOpen(!passed);
       setViewState('result');
     },
@@ -200,6 +378,11 @@ const QuizPlayer = ({ quizId, onComplete }) => {
   if (viewState === 'intro') {
     return (
       <div className="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl p-8">
+        {quizLoading ? (
+          <div className="mb-4 flex justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-[#2D31D4]" />
+          </div>
+        ) : null}
         <div className="w-12 h-12 rounded-full bg-[#2D31D4] text-white mx-auto flex items-center justify-center text-xl">❓</div>
         <h2 className="text-center font-bold text-xl mt-4 text-gray-900">{quiz.title || 'Quiz'}</h2>
 
@@ -237,6 +420,13 @@ const QuizPlayer = ({ quizId, onComplete }) => {
           </div>
         ) : null}
 
+        {resumePromptVisible ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Saved progress found</p>
+            <p className="mt-1">Your previous answers are saved on this device and will be restored when you resume.</p>
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={() => startMutation.mutate()}
@@ -244,8 +434,23 @@ const QuizPlayer = ({ quizId, onComplete }) => {
           className="mt-6 w-full h-12 rounded-xl bg-[#2D31D4] text-white font-semibold inline-flex items-center justify-center gap-2"
         >
           {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          Start Quiz →
+          {resumePromptVisible ? 'Resume Quiz →' : 'Start Quiz →'}
         </button>
+
+        {resumePromptVisible ? (
+          <button
+            type="button"
+            onClick={() => {
+              clearSavedQuizProgress(quizId);
+              setSavedProgress(null);
+              setSelectedAnswers({});
+              setCurrentIndex(0);
+            }}
+            className="mt-3 w-full h-11 rounded-xl border border-gray-300 text-sm font-semibold text-gray-700"
+          >
+            Start Fresh
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -254,7 +459,16 @@ const QuizPlayer = ({ quizId, onComplete }) => {
     return (
       <div>
         <div className="max-w-2xl mx-auto">
-          <p className="text-sm text-gray-500">Question {currentIndex + 1} of {totalQuestions}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-gray-500">Question {currentIndex + 1} of {totalQuestions}</p>
+            <button
+              type="button"
+              onClick={handleEndQuiz}
+              className="text-sm font-medium text-red-600 hover:text-red-700"
+            >
+              End Quiz
+            </button>
+          </div>
           <div className="mt-2 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
             <div className="h-full bg-[#2D31D4] transition-all duration-300" style={{ width: `${progressPercent}%` }} />
           </div>
@@ -265,7 +479,7 @@ const QuizPlayer = ({ quizId, onComplete }) => {
           <span className="inline-block text-xs px-3 py-1 rounded-full bg-[#2D31D4] text-white">
             Question {currentIndex + 1}
           </span>
-          <h3 className="text-[20px] font-semibold text-gray-900 mt-3">{currentQuestion?.question_text || currentQuestion?.text}</h3>
+          <h3 className="text-[20px] font-semibold text-gray-900 mt-3">{currentQuestion?.text || currentQuestion?.questionText || currentQuestion?.question_text}</h3>
 
           <div className="mt-6 flex flex-col gap-3">
             {(currentQuestion?.options || []).map((opt) => {
@@ -288,7 +502,7 @@ const QuizPlayer = ({ quizId, onComplete }) => {
                 >
                   <div className="flex items-start gap-3">
                     <span className={`mt-0.5 w-4 h-4 rounded-full border ${selected ? 'border-[#2D31D4] bg-[#2D31D4]' : 'border-gray-400'}`} />
-                    <span className="flex-1 text-sm text-gray-800">{opt.option_text || opt.text}</span>
+                    <span className="flex-1 text-sm text-gray-800">{opt.text || opt.optionText || opt.option_text}</span>
                   </div>
                 </button>
               );
@@ -318,6 +532,40 @@ const QuizPlayer = ({ quizId, onComplete }) => {
             )}
           </div>
         </div>
+
+        {fullscreenPrompt || tabWarningVisible ? (
+          <div className="fixed inset-0 z-[100] bg-black/60 px-4 flex items-center justify-center">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {tabWarningVisible ? 'Return to the quiz window' : 'Full screen is required'}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {tabWarningVisible
+                  ? 'This quiz is running in protected mode. Switch back to the quiz and continue in full screen, or end the quiz and return to normal mode.'
+                  : 'Please keep this quiz in full screen until you submit or end the attempt.'}
+              </p>
+              <div className="mt-5 flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setTabWarningVisible(false);
+                    await requestFullscreen();
+                  }}
+                  className="h-11 rounded-xl bg-[#2D31D4] text-white text-sm font-semibold"
+                >
+                  Return to Full Screen
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEndQuiz}
+                  className="h-11 rounded-xl border border-gray-300 text-sm font-semibold text-gray-700"
+                >
+                  End Quiz
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -393,7 +641,10 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         {passed ? (
           <button
             type="button"
-            onClick={onComplete}
+            onClick={async () => {
+              await exitFullscreen();
+              onComplete?.();
+            }}
             className="mt-6 px-5 py-2 rounded-lg bg-[#2D31D4] text-white text-sm font-medium"
           >
             Close
@@ -401,12 +652,17 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         ) : (
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              clearSavedQuizProgress(quizId);
+              setSavedProgress(null);
               setViewState('intro');
               setCurrentIndex(0);
               setSelectedAnswers({});
               setResultData(null);
               setReviewOpen(false);
+              setFullscreenPrompt(false);
+              setTabWarningVisible(false);
+              await exitFullscreen();
             }}
             className="mt-6 w-full h-11 rounded-xl bg-[#2D31D4] text-white text-sm font-semibold"
           >

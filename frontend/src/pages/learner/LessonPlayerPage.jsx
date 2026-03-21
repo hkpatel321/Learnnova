@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactPlayer from 'react-player';
@@ -6,6 +6,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 import QuizPlayer from '../../components/learner/QuizPlayer';
+import ErrorState from '../../components/ui/ErrorState';
 
 const typeStyles = {
   video: 'bg-blue-100 text-blue-700',
@@ -46,6 +47,7 @@ export default function LessonPlayerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const trackedActivityRef = useRef({});
 
   const [confettiPieces, setConfettiPieces] = useState([]);
 
@@ -67,20 +69,22 @@ export default function LessonPlayerPage() {
     return () => clearTimeout(timer);
   }, [showConfetti]);
 
-  const { data: lesson, isLoading: lessonLoading } = useQuery({
+  const { data: lesson, isLoading: lessonLoading, error: lessonError, refetch: refetchLesson } = useQuery({
     queryKey: ['lesson-detail', lessonId],
     queryFn: async () => {
       const res = await axios.get(`/lessons/${lessonId}`);
       return res.data?.data?.lesson || res.data?.lesson || res.data;
     },
+    retry: false,
   });
 
-  const { data: progress, isLoading: progressLoading } = useQuery({
+  const { data: progress, isLoading: progressLoading, error: progressError, refetch: refetchProgress } = useQuery({
     queryKey: ['course-progress', courseId],
     queryFn: async () => {
       const res = await axios.get(`/progress/courses/${courseId}`);
       return res.data?.data || res.data;
     },
+    retry: false,
   });
 
   const completeLessonMutation = useMutation({
@@ -102,6 +106,10 @@ export default function LessonPlayerPage() {
     onError: () => toast.error('Failed to complete course'),
   });
 
+  const trackActivityMutation = useMutation({
+    mutationFn: async (payload) => axios.post('/users/me/activity-events', payload),
+  });
+
   const lessons = useMemo(() => {
     const fromProgress =
       progress?.lessons ||
@@ -117,6 +125,7 @@ export default function LessonPlayerPage() {
   const completedIds = new Set(progress?.completedLessonIds || progress?.completed_lessons || []);
   const currentIndex = lessons.findIndex((item) => String(item.id) === String(lessonId));
   const currentLesson = lesson || lessons[currentIndex] || null;
+  const contentType = (currentLesson?.type || '').toLowerCase();
   const prevLesson = currentIndex > 0 ? lessons[currentIndex - 1] : null;
   const nextLesson = currentIndex >= 0 && currentIndex < lessons.length - 1 ? lessons[currentIndex + 1] : null;
   const doneCount = lessons.filter((item) => completedIds.has(item.id) || item.status === 'completed').length;
@@ -130,6 +139,46 @@ export default function LessonPlayerPage() {
     lesson?.courseTitle ||
     lesson?.course?.title ||
     'Course';
+
+  const recordActivity = useCallback((activityType, extra = {}) => {
+    const activityKey = `${lessonId}:${activityType}:${extra.scope || 'default'}`;
+    if (extra.once && trackedActivityRef.current[activityKey]) {
+      return;
+    }
+
+    if (extra.once) {
+      trackedActivityRef.current[activityKey] = true;
+    }
+
+    trackActivityMutation.mutate({
+      activityType,
+      courseId,
+      lessonId,
+      metadata: extra.metadata || null,
+    });
+  }, [courseId, lessonId, trackActivityMutation]);
+
+  useEffect(() => {
+    trackedActivityRef.current = {};
+  }, [lessonId]);
+
+  useEffect(() => {
+    if (!currentLesson) return;
+
+    if (contentType === 'document') {
+      recordActivity('document_open', {
+        once: true,
+        scope: 'lesson-open',
+      });
+    }
+
+    if (contentType === 'image') {
+      recordActivity('image_view', {
+        once: true,
+        scope: 'lesson-view',
+      });
+    }
+  }, [contentType, currentLesson, lessonId, recordActivity]);
 
   const handleNavigateLesson = (targetId) => {
     navigate(`/learn/${courseId}/${targetId}`);
@@ -154,7 +203,36 @@ export default function LessonPlayerPage() {
     );
   }
 
-  const contentType = (currentLesson?.type || '').toLowerCase();
+  if (lessonError || progressError) {
+    const message =
+      lessonError?.response?.data?.message ||
+      progressError?.response?.data?.message ||
+      'You do not currently have access to this course content.';
+
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4">
+        <div className="max-w-xl w-full bg-white border border-gray-200 rounded-2xl">
+          <ErrorState
+            title="Course Access Required"
+            message={message}
+            onRetry={() => {
+              refetchLesson();
+              refetchProgress();
+            }}
+          />
+          <div className="px-6 pb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => navigate(`/courses/${courseId}`)}
+              className="px-4 py-2 rounded-lg bg-[#2D31D4] text-white text-sm font-medium"
+            >
+              Back to Course
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const attachments = currentLesson?.attachments || [];
 
   return (
@@ -296,32 +374,72 @@ export default function LessonPlayerPage() {
               {contentType === 'video' ? (
                 <div className="aspect-video rounded-xl overflow-hidden bg-black">
                   <ReactPlayer
-                    url={currentLesson?.video_url || currentLesson?.videoUrl}
+                    src={currentLesson?.video_url || currentLesson?.videoUrl}
                     width="100%"
                     height="100%"
                     controls
+                    onPlay={() => {
+                      recordActivity('video_watch', {
+                        once: true,
+                        scope: 'play',
+                      });
+                    }}
                   />
                 </div>
               ) : null}
 
               {contentType === 'document' ? (
                 <div>
-                  <iframe
-                    src={currentLesson?.file_url || currentLesson?.fileUrl}
-                    title="Document Viewer"
-                    width="100%"
-                    height="600"
-                    className="border border-gray-200 rounded-xl bg-white"
-                  />
-                  {currentLesson?.allow_download || currentLesson?.allowDownload ? (
-                    <a
-                      href={currentLesson?.file_url || currentLesson?.fileUrl}
-                      download
-                      className="inline-block mt-3 px-4 py-2 rounded-lg border border-[#2D31D4] text-[#2D31D4] text-sm font-medium"
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <object
+                      data={currentLesson?.file_url || currentLesson?.fileUrl}
+                      type="application/pdf"
+                      width="100%"
+                      height="600"
+                      className="rounded-xl border border-gray-100 bg-white"
                     >
-                      ⬇ Download File
-                    </a>
-                  ) : null}
+                      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl bg-gray-50 p-6 text-center">
+                        <p className="text-base font-semibold text-gray-900">Preview unavailable in-browser</p>
+                        <p className="mt-2 max-w-md text-sm text-gray-600">
+                          This document source does not allow embedded preview here. Open it in a new tab or download it instead.
+                        </p>
+                      </div>
+                    </object>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      <a
+                        href={currentLesson?.file_url || currentLesson?.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => {
+                          recordActivity('document_open', {
+                            once: true,
+                            scope: 'new-tab',
+                            metadata: { source: 'new-tab' },
+                          });
+                        }}
+                        className="inline-flex items-center rounded-lg bg-[#2D31D4] px-4 py-2 text-sm font-medium text-white"
+                      >
+                        Open Document
+                      </a>
+                      {currentLesson?.allow_download || currentLesson?.allowDownload ? (
+                        <a
+                          href={currentLesson?.file_url || currentLesson?.fileUrl}
+                          download
+                          onClick={() => {
+                            recordActivity('document_download', {
+                              metadata: { source: 'lesson-file' },
+                            });
+                          }}
+                          className="inline-flex items-center rounded-lg border border-[#2D31D4] px-4 py-2 text-sm font-medium text-[#2D31D4]"
+                        >
+                          Download File
+                        </a>
+                      ) : null}
+                    </div>
+                    <p className="mt-3 text-xs text-gray-500">
+                      PDF preview uses your browser directly. If the source blocks embedding, use "Open Document" or download the file.
+                    </p>
+                  </div>
                 </div>
               ) : null}
 
@@ -331,11 +449,22 @@ export default function LessonPlayerPage() {
                     src={currentLesson?.image_url || currentLesson?.imageUrl || currentLesson?.file_url || currentLesson?.fileUrl}
                     alt={currentLesson?.title || 'Lesson image'}
                     className="max-h-[70vh] mx-auto rounded-xl object-contain"
+                    onLoad={() => {
+                      recordActivity('image_view', {
+                        once: true,
+                        scope: 'image-load',
+                      });
+                    }}
                   />
                   {currentLesson?.allow_download || currentLesson?.allowDownload ? (
                     <a
                       href={currentLesson?.image_url || currentLesson?.imageUrl || currentLesson?.file_url || currentLesson?.fileUrl}
                       download
+                      onClick={() => {
+                        recordActivity('image_download', {
+                          metadata: { source: 'lesson-image' },
+                        });
+                      }}
                       className="inline-block mt-3 px-4 py-2 rounded-lg border border-[#2D31D4] text-[#2D31D4] text-sm font-medium"
                     >
                       ⬇ Download Image
@@ -349,6 +478,9 @@ export default function LessonPlayerPage() {
                   quizId={currentLesson?.quiz_id || currentLesson?.quizId}
                   courseId={courseId}
                   onComplete={async () => {
+                    recordActivity('quiz_attempt', {
+                      metadata: { outcome: 'completed' },
+                    });
                     await completeLessonMutation.mutateAsync(lessonId);
                     toast.success('Quiz marked complete');
                   }}

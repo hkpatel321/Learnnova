@@ -8,16 +8,25 @@ const getCTA = (course, isAuthenticated) => {
   const isCompleted = (course.status || '').toLowerCase() === 'completed' || completion >= 100;
   const inProgress = (course.status || '').toLowerCase() === 'in_progress' || (completion > 0 && completion < 100);
   const price = Number(course.price || 0);
-  const requiresPayment = !!(course.requiresPayment || price > 0);
+  const requiresPayment =
+    typeof course.requiresPayment === 'boolean'
+      ? course.requiresPayment
+      : String(course.accessRule || '').toLowerCase() === 'payment' || price > 0;
   const isPaid = !!(course.isPaid || course.paymentStatus === 'paid');
+  const canAccessCourse =
+    typeof course.canAccessCourse === 'boolean'
+      ? course.canAccessCourse
+      : requiresPayment
+        ? isPaid
+        : isEnrolled;
 
   if (!isAuthenticated) {
     return { label: 'Join Course', className: 'border border-[#2D31D4] text-[#2D31D4] bg-white', action: 'login' };
   }
-  if (requiresPayment && !isPaid && !isEnrolled) {
+  if (requiresPayment && !canAccessCourse) {
     return { label: `Buy — ₹${price}`, className: 'bg-amber-500 text-black', action: 'buy' };
   }
-  if (!isEnrolled) {
+  if (!canAccessCourse) {
     return { label: 'Start Learning →', className: 'bg-[#2D31D4] text-white', action: 'start' };
   }
   if (isCompleted) {
@@ -33,7 +42,19 @@ const CourseCard = ({ course, isAuthenticated }) => {
   const navigate = useNavigate();
   const cta = getCTA(course, isAuthenticated);
   const completion = Math.max(0, Math.min(100, Number(course.completionPercent || course.progress || 0)));
+  const price = Number(course.price || 0);
+  const requiresPayment =
+    typeof course.requiresPayment === 'boolean'
+      ? course.requiresPayment
+      : String(course.accessRule || '').toLowerCase() === 'payment' || price > 0;
+  const isPaid = !!(course.isPaid || course.paymentStatus === 'paid');
   const isEnrolled = !!(course.isEnrolled || course.enrolled || course.enrollment);
+  const canAccessCourse =
+    typeof course.canAccessCourse === 'boolean'
+      ? course.canAccessCourse
+      : requiresPayment
+        ? isPaid
+        : isEnrolled;
   const coverSrc = resolveMediaUrl(course.coverImageUrl || course.cover_image_url || course.coverImage);
 
   const handleClick = () => {
@@ -72,7 +93,7 @@ const CourseCard = ({ course, isAuthenticated }) => {
         <h3 className="mt-2 text-[15px] font-semibold text-gray-900 line-clamp-2">{course.title || 'Untitled Course'}</h3>
         <p className="mt-1 text-sm text-gray-500 line-clamp-2">{course.description || 'Start learning with this course.'}</p>
 
-        {isEnrolled ? (
+        {canAccessCourse ? (
           <div className="mt-3">
             <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
               <div className="h-full bg-[#2D31D4]" style={{ width: `${completion}%` }} />

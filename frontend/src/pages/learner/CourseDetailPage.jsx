@@ -138,6 +138,7 @@ export default function CourseDetailPage() {
   const queryClient = useQueryClient();
   const { isAuthenticated, user } = useAuthStore();
   const isLearner = user?.role === 'learner';
+  const authScope = isAuthenticated && user?.id ? user.id : 'guest';
 
   const [activeTab, setActiveTab] = useState('overview');
   const [lessonSearch, setLessonSearch] = useState('');
@@ -148,7 +149,7 @@ export default function CourseDetailPage() {
   const stripeSessionId = searchParams.get('session_id');
 
   const { data: course, isLoading: courseLoading } = useQuery({
-    queryKey: ['course-detail', courseId],
+    queryKey: ['course-detail', courseId, authScope],
     queryFn: async () => {
       const res = await axios.get(`/courses/${courseId}/detail`);
       const courseData = res.data?.data?.course || res.data?.course || res.data;
@@ -169,12 +170,13 @@ export default function CourseDetailPage() {
   });
 
   const { data: progress } = useQuery({
-    queryKey: ['course-progress', courseId, isAuthenticated],
+    queryKey: ['course-progress', courseId, authScope],
     queryFn: async () => {
       const res = await axios.get(`/progress/courses/${courseId}`);
       return res.data?.data || res.data;
     },
     enabled: isAuthenticated && isLearner,
+    retry: false,
   });
 
   const submitReviewMutation = useMutation({
@@ -194,7 +196,8 @@ export default function CourseDetailPage() {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+        queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
       ]);
     },
@@ -205,19 +208,14 @@ export default function CourseDetailPage() {
       const res = await axios.post(`/courses/${courseId}/payment/verify`, payload);
       return res.data?.data || res.data;
     },
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+        queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
         queryClient.invalidateQueries({ queryKey: ['my-payments'] }),
       ]);
-
-      const paymentId =
-        data?.payment?.providerPaymentId ||
-        data?.payment?.provider_payment_id ||
-        data?.payment?.providerOrderId ||
-        'Stripe test payment';
-      toast.success(`Stripe payment verified: ${paymentId}`);
+      toast.success('Payment successful. Course unlocked.');
     },
     onError: (error) => {
       const message = error?.response?.data?.message || 'Payment verification failed';
@@ -236,7 +234,7 @@ export default function CourseDetailPage() {
     if (!stripeStatus) return;
 
     if (stripeStatus === 'cancelled') {
-      toast('Stripe test checkout was cancelled', { icon: '💳' });
+      toast('Checkout was cancelled', { icon: '💳' });
       navigate(`/courses/${courseId}`, { replace: true });
       return;
     }
@@ -293,7 +291,15 @@ export default function CourseDetailPage() {
   const price = Number(course?.price || 0);
   const isPaid = !!(progress?.isPaid || course?.isPaid);
   const requiresPayment = !!(course?.requiresPayment || price > 0);
+  const canAccessCourse = !!(
+    progress?.isEnrolled ||
+    course?.canAccessCourse ||
+    (requiresPayment ? isPaid : isEnrolled)
+  );
   const isRestricted = ['invitation', 'payment'].includes((course?.accessRule || '').toLowerCase());
+  const accessMessage =
+    course?.accessMessage ||
+    (requiresPayment ? 'Buy this course to unlock the lessons.' : 'Enroll in this course to unlock the lessons.');
 
   const avgRating =
     Number(course?.avg_rating ?? course?.avgRating ?? 0) ||
@@ -338,16 +344,16 @@ export default function CourseDetailPage() {
     if (isCompletedCourse) {
       return { label: '✓ Completed', className: 'border border-green-300 text-white bg-transparent', action: 'completed' };
     }
-    if (requiresPayment && !isPaid && !isEnrolled) {
+    if (requiresPayment && !canAccessCourse) {
       return { label: `Buy with Stripe — ₹${price}`, className: 'bg-amber-500 text-black', action: 'buy' };
     }
     if (isInProgress) {
       return { label: 'Continue Learning →', className: 'bg-white text-[#2D31D4]', action: 'continue' };
     }
-    if (!isEnrolled) {
+    if (!canAccessCourse && !requiresPayment) {
       return { label: 'Start Learning →', className: 'bg-white text-[#2D31D4]', action: 'start' };
     }
-    return { label: 'Start Learning →', className: 'bg-white text-[#2D31D4]', action: 'start' };
+    return { label: 'Start Learning →', className: 'bg-white text-[#2D31D4]', action: 'open' };
   })();
 
   const isBusy =
@@ -359,8 +365,12 @@ export default function CourseDetailPage() {
   const remainingCount = Math.max(0, lessons.length - completedCount);
 
   const onLessonClick = (lesson) => {
-    if (!isEnrolled && isRestricted) {
-      toast('Enroll in this course to access lessons', { icon: '🔒' });
+    if (!canAccessCourse && isRestricted) {
+      toast(accessMessage, { icon: '🔒' });
+      return;
+    }
+    if (!canAccessCourse) {
+      toast(accessMessage, { icon: '🔒' });
       return;
     }
     navigate(`/learn/${courseId}/${lesson.id}`);
@@ -391,7 +401,8 @@ export default function CourseDetailPage() {
 
       if (orderData?.alreadyPaid) {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+          queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+          queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
           queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
         ]);
         toast.success('Payment already verified for this course');
@@ -404,7 +415,7 @@ export default function CourseDetailPage() {
         return;
       }
 
-      toast('Redirecting to Stripe test checkout...', { icon: '💳' });
+      toast('Redirecting to secure checkout...', { icon: '💳' });
       window.location.assign(orderData.checkoutUrl);
     } catch (error) {
       const message = error?.response?.data?.message || 'Unable to start payment';
@@ -423,7 +434,7 @@ export default function CourseDetailPage() {
       return;
     }
 
-    if (isEnrolled) {
+    if (canAccessCourse) {
       if (!openFirstLesson()) {
         toast('This course does not have lessons yet', { icon: '📚' });
       }
@@ -468,7 +479,7 @@ export default function CourseDetailPage() {
               <span>⏱ {totalDuration} min</span>
             </div>
 
-            {isEnrolled ? (
+            {canAccessCourse ? (
               <div className="mt-5 max-w-sm">
                 <div className="h-2 bg-white/30 rounded-full overflow-hidden">
                   <div className="h-full bg-white" style={{ width: `${Math.max(0, Math.min(100, completionPercent))}%` }} />
@@ -485,14 +496,7 @@ export default function CourseDetailPage() {
             >
               {isBusy ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : isLearner ? cta.label : 'Preview Mode'}
             </button>
-
-            {isPaid ? (
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                Stripe test payment verified for this course
-              </div>
-            ) : null}
-
-            {requiresPayment && !isPaid ? (
+            {requiresPayment && !canAccessCourse ? (
               <p className="mt-3 max-w-md text-xs text-white/80">
                 Demo card: 4242 4242 4242 4242, any future expiry, any CVC, any ZIP/postal code.
               </p>
@@ -602,16 +606,15 @@ export default function CourseDetailPage() {
                   onClick={handlePrimaryAction}
                   className="w-full py-2.5 rounded-lg bg-[#2D31D4] text-white text-sm font-semibold hover:bg-blue-800 disabled:opacity-70"
                 >
-                  {isBusy ? 'Processing...' : isInProgress ? 'Continue Learning →' : isEnrolled ? 'Open Course' : requiresPayment && !isPaid ? `Pay with Stripe ₹${price}` : 'Enroll Now'}
+                  {isBusy ? 'Processing...' : isInProgress ? 'Continue Learning →' : canAccessCourse ? 'Open Course' : requiresPayment ? `Pay with Stripe ₹${price}` : 'Enroll Now'}
                 </button>
                 <div className="mt-4 space-y-2 text-sm text-gray-700">
                   <p>📚 {lessonCount} Lessons</p>
                   <p>✓ {completedCount} Completed</p>
                   <p>○ {remainingCount} Remaining</p>
                   <p>⏱ Total Duration: {formatMinutes(totalDuration)}</p>
-                  {requiresPayment ? <p>💳 Stripe test checkout enabled</p> : null}
-                  {requiresPayment && !isPaid ? <p>🧪 Use card 4242 4242 4242 4242 for demo</p> : null}
-                  {isPaid ? <p>✓ Stripe test payment received</p> : null}
+                {requiresPayment ? <p>💳 Secure checkout available</p> : null}
+                {isPaid ? <p>✓ Payment received</p> : null}
                 </div>
               </div>
             </aside>
@@ -625,7 +628,7 @@ export default function CourseDetailPage() {
                   <StarsDisplay rating={avgRating} size={20} />
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{reviewCount} reviews</p>
-                {isAuthenticated && isLearner && isEnrolled ? (
+                {isAuthenticated && isLearner && canAccessCourse ? (
                   <button
                     type="button"
                     onClick={() => setShowReviewModal(true)}

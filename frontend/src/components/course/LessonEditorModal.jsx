@@ -562,7 +562,7 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                       <div className="overflow-hidden rounded-xl border border-gray-200 aspect-video bg-black">
                         <ReactPlayer
                           ref={playerRef}
-                          url={trimmedVideoUrl}
+                          src={trimmedVideoUrl}
                           controls
                           width="100%"
                           height="100%"
