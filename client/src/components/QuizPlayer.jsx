@@ -192,69 +192,187 @@ function QuestionScreen({ questions, currentIdx, answers, onAnswer, onProceed, s
   );
 }
 
-// ── Screen 3: Result ──────────────────────────────────────────────────────────
-function ResultScreen({ result, onRetry }) {
-  const { passed, correct_answers, total_questions, points_earned, updated_total_points, attempt_number } = result;
-
-  if (passed) {
-    return (
-      <div className="flex flex-col items-center gap-5 py-6">
-        {/* Success banner */}
-        <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center">
-          <svg className="w-12 h-12 text-green-500" fill="none" viewBox="0 0 24 24"
-               stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-
-        <div className="text-center">
-          <h2 className="text-xl font-bold text-gray-900">Perfect Score! 🎉</h2>
-          <p className="text-gray-500 text-sm mt-1">
-            {correct_answers} / {total_questions} correct
+// ── Question Report Card ──────────────────────────────────────────────────────
+function QuestionReportCard({ item, index }) {
+  return (
+    <div className={`rounded-xl border-2 p-4 transition-all
+      ${item.is_correct
+        ? 'border-green-200 bg-green-50/50'
+        : 'border-red-200 bg-red-50/50'}`}
+    >
+      {/* Question header */}
+      <div className="flex items-start gap-3 mb-3">
+        <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center
+                          text-xs font-bold text-white
+          ${item.is_correct ? 'bg-green-500' : 'bg-red-500'}`}>
+          {item.is_correct ? '✓' : '✗'}
+        </span>
+        <div className="flex-1">
+          <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5">
+            Question {index + 1}
+          </p>
+          <p className="text-sm font-semibold text-gray-900 leading-relaxed">
+            {item.question_text}
           </p>
         </div>
-
-        {/* Points earned pop-up style */}
-        <div className="bg-[#eef2ff] border border-[#1a24cc]/20 rounded-2xl px-8 py-5
-                        flex flex-col items-center gap-1 shadow-sm">
-          <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold">Points Earned</p>
-          <p className="text-4xl font-black text-[#1a24cc]">+{points_earned}</p>
-          <p className="text-xs text-gray-400">Total: {updated_total_points} pts</p>
-        </div>
-
-        <p className="text-sm text-gray-400">Attempt #{attempt_number}</p>
       </div>
-    );
-  }
 
-  // Failed
+      {/* Options list */}
+      <div className="space-y-1.5 ml-10">
+        {item.options.map(opt => {
+          const isSelected  = opt.id === item.selected_option_id;
+          const isCorrect   = opt.is_correct;
+          let bg   = 'bg-white border-gray-200';
+          let text = 'text-gray-600';
+          let icon = null;
+
+          if (isCorrect) {
+            bg   = 'bg-green-100 border-green-300';
+            text = 'text-green-800 font-semibold';
+            icon = (
+              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            );
+          } else if (isSelected && !isCorrect) {
+            bg   = 'bg-red-100 border-red-300';
+            text = 'text-red-800 font-semibold';
+            icon = (
+              <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            );
+          }
+
+          return (
+            <div key={opt.id}
+                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm ${bg} ${text}`}>
+              {icon ?? <span className="w-4 h-4 flex-shrink-0" />}
+              <span>{opt.option_text}</span>
+              {isSelected && !isCorrect && (
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-red-400 font-bold">
+                  Your answer
+                </span>
+              )}
+              {isCorrect && (
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-green-500 font-bold">
+                  Correct
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Screen 3: Result ──────────────────────────────────────────────────────────
+function ResultScreen({ result, onRetry }) {
+  const { passed, correct_answers, total_questions, points_earned,
+          updated_total_points, attempt_number, report } = result;
+
+  const [showReport, setShowReport] = useState(false);
+
+  const scorePct = total_questions > 0
+    ? Math.round((correct_answers / total_questions) * 100)
+    : 0;
+
   return (
     <div className="flex flex-col items-center gap-5 py-6">
-      {/* Fail banner */}
-      <div className="w-24 h-24 rounded-full bg-red-50 flex items-center justify-center">
-        <svg className="w-12 h-12 text-red-400" fill="none" viewBox="0 0 24 24"
-             stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
+      {/* ── Score Summary ─────────────────────────────────────── */}
+      {passed ? (
+        <>
+          <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center">
+            <svg className="w-12 h-12 text-green-500" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <h2 className="text-xl font-bold text-gray-900">Perfect Score! 🎉</h2>
+            <p className="text-gray-500 text-sm mt-1">
+              {correct_answers} / {total_questions} correct ({scorePct}%)
+            </p>
+          </div>
+          <div className="bg-[#eef2ff] border border-[#1a24cc]/20 rounded-2xl px-8 py-5
+                          flex flex-col items-center gap-1 shadow-sm">
+            <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold">Points Earned</p>
+            <p className="text-4xl font-black text-[#1a24cc]">+{points_earned}</p>
+            <p className="text-xs text-gray-400">Total: {updated_total_points} pts</p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="w-24 h-24 rounded-full bg-red-50 flex items-center justify-center">
+            <svg className="w-12 h-12 text-red-400" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <h2 className="text-xl font-bold text-gray-900">Not Quite!</h2>
+            <p className="text-gray-500 text-sm mt-1">
+              {correct_answers} / {total_questions} correct ({scorePct}%)
+            </p>
+            <p className="text-[#1a24cc] text-sm font-medium mt-2">
+              Review the report below and try again
+            </p>
+          </div>
+        </>
+      )}
+
+      <p className="text-sm text-gray-400">Attempt #{attempt_number}</p>
+
+      {/* ── Action Buttons ────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        {!passed && (
+          <button
+            onClick={onRetry}
+            className="px-7 py-2.5 rounded-full bg-[#1a24cc] text-white text-sm font-semibold
+                       hover:bg-[#1219a0] transition-colors"
+          >
+            Retry Quiz
+          </button>
+        )}
+        <button
+          onClick={() => setShowReport(r => !r)}
+          className="px-7 py-2.5 rounded-full border-2 border-[#1a24cc] text-[#1a24cc]
+                     text-sm font-semibold hover:bg-[#eef2ff] transition-colors"
+        >
+          {showReport ? 'Hide Report' : 'View Full Report'}
+        </button>
       </div>
 
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-gray-900">Not Quite!</h2>
-        <p className="text-gray-500 text-sm mt-1">
-          {correct_answers} / {total_questions} correct
-        </p>
-        <p className="text-[#1a24cc] text-sm font-medium mt-2">
-          Try again to earn more points
-        </p>
-      </div>
+      {/* ── Detailed Report ───────────────────────────────────── */}
+      {showReport && report && report.length > 0 && (
+        <div className="w-full mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">
+              Question-by-Question Report
+            </h3>
+            <span className="text-xs text-gray-400">
+              {correct_answers} correct · {total_questions - correct_answers} incorrect
+            </span>
+          </div>
 
-      <button
-        onClick={onRetry}
-        className="px-7 py-2.5 rounded-full bg-[#1a24cc] text-white text-sm font-semibold
-                   hover:bg-[#1219a0] transition-colors"
-      >
-        Retry Quiz
-      </button>
+          {/* Score bar */}
+          <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500
+                ${scorePct === 100 ? 'bg-green-500' : scorePct >= 50 ? 'bg-yellow-400' : 'bg-red-400'}`}
+              style={{ width: `${scorePct}%` }}
+            />
+          </div>
+
+          {/* Per-question cards */}
+          {report.map((item, i) => (
+            <QuestionReportCard key={item.question_id} item={item} index={i} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

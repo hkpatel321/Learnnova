@@ -270,7 +270,7 @@ function ImageViewer({ url, allowDownload, title }) {
 }
 
 // ── Quiz placeholder (full QuizPlayer is a future component) ─────────────────
-function OGquiz({ quizId }) {
+function OGquiz({ quizId, enrollmentId, onQuizComplete }) {
   return (
     <div className="bg-[#eef2ff] border border-[#1a24cc]/20 rounded-2xl p-8
                     flex flex-col items-center gap-3">
@@ -282,7 +282,7 @@ function OGquiz({ quizId }) {
       </svg>
       <p className="font-semibold text-[#1a24cc]">Quiz</p>
       <p className="text-sm text-gray-500">Quiz ID: {quizId}</p>
-      <p className="text-xs text-gray-400"><QuizPlayer quizId={quizId}/></p>
+      <QuizPlayer quizId={quizId} enrollmentId={enrollmentId} onQuizComplete={onQuizComplete} />
     </div>
   );
 }

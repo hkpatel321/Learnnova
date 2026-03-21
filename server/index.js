@@ -8,12 +8,12 @@ await initDB();
 //await seedDummyData();
 import { testConnection } from './db.js';
 // Route modules
-import authRoutes       from './routes/auth.js';
-import coursesRoutes    from './routes/courses.js';
+import authRoutes from './routes/auth.js';
+import coursesRoutes from './routes/courses.js';
 import enrollmentsRoutes from './routes/enrollments.js';
-import lessonsRoutes    from './routes/lessons.js';
-import quizzesRoutes    from './routes/quizzes.js';
-import reviewsRoutes    from './routes/reviews.js';
+import lessonsRoutes from './routes/lessons.js';
+import quizzesRoutes from './routes/quizzes.js';
+import reviewsRoutes from './routes/reviews.js';
 
 const app = express();
 
@@ -28,11 +28,11 @@ app.use(
 app.use(express.json());
 
 // ── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth',        authRoutes);
-app.use('/api/courses',     coursesRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/courses', coursesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
-app.use('/api/lessons',     lessonsRoutes);
-app.use('/api/quizzes',     quizzesRoutes);
+app.use('/api/lessons', lessonsRoutes);
+app.use('/api/quizzes', quizzesRoutes);
 
 // Reviews are nested under courses: /api/courses/:id/reviews
 app.use('/api/courses/:id/reviews', reviewsRoutes);

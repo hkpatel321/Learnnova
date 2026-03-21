@@ -165,18 +165,45 @@ router.post('/:id/submit', async (req, res) => {
     }
   }
 
-  // ── Fetch correct options (server-side only — never sent to client) ───────
+  // ── Fetch correct options + all option text ────────────────────────────────
   const optionsResult = await query(
-    `SELECT question_id, id AS option_id, is_correct
+    `SELECT question_id, id AS option_id, option_text, is_correct
      FROM quiz_options
-     WHERE question_id = ANY($1::uuid[])`,
+     WHERE question_id = ANY($1::uuid[])
+     ORDER BY question_id, sort_order ASC`,
     [Array.from(validQuestionIds)],
   );
 
   // Build lookup: question_id → correct option_id
   const correctMap = {};
+  // Build lookup: option_id → option_text
+  const optionTextMap = {};
+  // Build lookup: question_id → [{ id, option_text, is_correct }]
+  const optionsByQuestion = {};
   for (const row of optionsResult.rows) {
+    optionTextMap[row.option_id] = row.option_text;
     if (row.is_correct) correctMap[row.question_id] = row.option_id;
+    if (!optionsByQuestion[row.question_id]) optionsByQuestion[row.question_id] = [];
+    optionsByQuestion[row.question_id].push({
+      id: row.option_id,
+      option_text: row.option_text,
+      is_correct: row.is_correct,
+    });
+  }
+
+  // ── Fetch question text ───────────────────────────────────────────────────
+  const questionTextResult = await query(
+    `SELECT id, question_text, sort_order
+     FROM quiz_questions
+     WHERE quiz_id = $1
+     ORDER BY sort_order ASC`,
+    [quiz_id],
+  );
+  const questionTextMap = {};
+  const questionOrder = [];
+  for (const row of questionTextResult.rows) {
+    questionTextMap[row.id] = row.question_text;
+    questionOrder.push(row.id);
   }
 
   // ── Grade answers ─────────────────────────────────────────────────────────
@@ -210,7 +237,6 @@ router.post('/:id/submit', async (req, res) => {
   const { id: attempt_id, attempt_number } = attemptResult.rows[0];
 
   // ── Persist per-question answers ──────────────────────────────────────────
-  // Use Promise.all for parallel inserts instead of a serial loop
   await Promise.all(
     gradedAnswers.map(({ question_id, selected_option_id, is_correct }) =>
       query(
@@ -230,6 +256,28 @@ router.post('/:id/submit', async (req, res) => {
 
   const updated_total_points = Number(userResult.rows[0].total_points);
 
+  // ── Build per-question report ─────────────────────────────────────────────
+  const gradedMap = {};
+  for (const g of gradedAnswers) gradedMap[g.question_id] = g;
+
+  const report = questionOrder.map((qid) => {
+    const graded = gradedMap[qid] ?? null;
+    return {
+      question_id: qid,
+      question_text: questionTextMap[qid],
+      selected_option_id: graded?.selected_option_id ?? null,
+      selected_option_text: graded?.selected_option_id
+        ? (optionTextMap[graded.selected_option_id] ?? null)
+        : null,
+      correct_option_id: correctMap[qid] ?? null,
+      correct_option_text: correctMap[qid]
+        ? (optionTextMap[correctMap[qid]] ?? null)
+        : null,
+      is_correct: graded?.is_correct ?? false,
+      options: optionsByQuestion[qid] ?? [],
+    };
+  });
+
   res.json({
     points_earned,
     passed,
@@ -237,6 +285,7 @@ router.post('/:id/submit', async (req, res) => {
     total_questions,
     attempt_number,
     updated_total_points,
+    report,
   });
 });
 

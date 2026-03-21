@@ -6,23 +6,39 @@ export async function seedDummyData() {
   try {
     await client.query('BEGIN');
 
-    // ─── 1. Seed an Instructor ────────────────────────────────────────────────
-    const instructorRes = await client.query(`
+    // ─── 1. Seed Instructors ────────────────────────────────────────────────
+    const instructor1Res = await client.query(`
       INSERT INTO users (name, email, password_hash, role)
-      VALUES ('John Doe', 'john@learnova.com', 'REPLACE_WITH_BCRYPT_HASH', 'instructor')
+      VALUES ('John Doe', 'john@learnova.com', '$2b$10$0fvcA1zLhqfFTH/gj0waoef1NkbuTuOW6yGVf3Spo2Ajrf9SrXHZ.', 'instructor')
       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
       RETURNING id;
     `);
-    const instructorId = instructorRes.rows[0].id;
+    const instructor1Id = instructor1Res.rows[0].id;
 
-    // ─── 2. Seed a Learner ────────────────────────────────────────────────────
-    const learnerRes = await client.query(`
+    const instructor2Res = await client.query(`
       INSERT INTO users (name, email, password_hash, role)
-      VALUES ('Jane Smith', 'jane@learnova.com', 'REPLACE_WITH_BCRYPT_HASH', 'learner')
+      VALUES ('Alice Johnson', 'alice@learnova.com', '$2b$10$.XqIwFmjlleN6CeKCavlPOKr4UtJEzsaOxpZYuMlIrXa4DpAS9ACi', 'instructor')
       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
       RETURNING id;
     `);
-    const learnerId = learnerRes.rows[0].id;
+    const instructor2Id = instructor2Res.rows[0].id;
+
+    // ─── 2. Seed Learners ────────────────────────────────────────────────────
+    const learner1Res = await client.query(`
+      INSERT INTO users (name, email, password_hash, role)
+      VALUES ('Jane Smith', 'jane@learnova.com', '$2b$10$0fvcA1zLhqfFTH/gj0waoef1NkbuTuOW6yGVf3Spo2Ajrf9SrXHZ.', 'learner')
+      ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+      RETURNING id;
+    `);
+    const learner1Id = learner1Res.rows[0].id;
+
+    const learner2Res = await client.query(`
+      INSERT INTO users (name, email, password_hash, role, total_points)
+      VALUES ('Bob Wilson', 'bob@learnova.com', '$2b$10$.XqIwFmjlleN6CeKCavlPOKr4UtJEzsaOxpZYuMlIrXa4DpAS9ACi', 'learner', 50)
+      ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+      RETURNING id;
+    `);
+    const learner2Id = learner2Res.rows[0].id;
 
     // ─── 3. Seed Courses ──────────────────────────────────────────────────────
     const coursesData = [
@@ -35,6 +51,7 @@ export async function seedDummyData() {
         is_published: true,
         visibility: 'everyone',
         access_rule: 'open',
+        instructor: instructor1Id
       },
       {
         title: 'React & Redux Masterclass',
@@ -46,6 +63,7 @@ export async function seedDummyData() {
         visibility: 'everyone',
         access_rule: 'payment',
         price: 999.00,
+        instructor: instructor1Id
       },
       {
         title: 'Python Data Science Bootcamp',
@@ -56,6 +74,29 @@ export async function seedDummyData() {
         is_published: true,
         visibility: 'signed_in',
         access_rule: 'open',
+        instructor: instructor2Id
+      },
+      {
+        title: 'Advanced CSS and Sass',
+        short_desc: 'Master CSS layouts, animations, and Sass features.',
+        description: 'Learn Flexbox, Grid, advanced animations, and robust CSS architecture with Sass.',
+        tags: ['css', 'sass', 'frontend'],
+        website_url: 'https://learnova.com/courses/advanced-css',
+        is_published: true,
+        visibility: 'everyone',
+        access_rule: 'open',
+        instructor: instructor2Id
+      },
+      {
+        title: 'Node.js Backend Architecture',
+        short_desc: 'Build scalable APIs with Node, Express, and PostgreSQL.',
+        description: 'Learn modern backend practices, authentication, database design, and deployment.',
+        tags: ['node', 'postgresql', 'backend'],
+        website_url: 'https://learnova.com/courses/node-backend',
+        is_published: false,
+        visibility: 'signed_in',
+        access_rule: 'invitation',
+        instructor: instructor1Id
       },
     ];
 
@@ -70,32 +111,42 @@ export async function seedDummyData() {
          RETURNING id;`,
         [
           c.title, c.short_desc, c.description, c.tags,
-          c.website_url, instructorId, c.is_published,
+          c.website_url, c.instructor, c.is_published,
           c.visibility, c.access_rule, c.price ?? null,
         ]
       );
       if (res.rows[0]) courseIds.push(res.rows[0].id);
     }
 
-    const [jsId, reactId, pythonId] = courseIds;
+    const [jsId, reactId, pythonId, cssId, nodeId] = courseIds;
 
     // ─── 4. Seed Lessons ──────────────────────────────────────────────────────
     const lessonsData = [
       // JS Course
-      { course_id: jsId, title: 'What is JavaScript?',       lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy1', duration_mins: 10, sort_order: 1 },
-      { course_id: jsId, title: 'Variables & Data Types',    lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy2', duration_mins: 15, sort_order: 2 },
-      { course_id: jsId, title: 'JS Cheatsheet',             lesson_type: 'document', file_url: 'https://cdn.learnova.com/js-cheatsheet.pdf', allow_download: true, sort_order: 3 },
-      { course_id: jsId, title: 'JS Basics Quiz',            lesson_type: 'quiz',     sort_order: 4 },
+      { course_id: jsId, title: 'What is JavaScript?',       lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy1', duration_mins: 10, sort_order: 1, instructor: instructor1Id },
+      { course_id: jsId, title: 'Variables & Data Types',    lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy2', duration_mins: 15, sort_order: 2, instructor: instructor1Id },
+      { course_id: jsId, title: 'Functions & Scope',         lesson_type: 'document', file_url: 'https://cdn.learnova.com/js-functions.pdf', allow_download: true, sort_order: 3, instructor: instructor1Id },
+      { course_id: jsId, title: 'JS Cheatsheet',             lesson_type: 'document', file_url: 'https://cdn.learnova.com/js-cheatsheet.pdf', allow_download: true, sort_order: 4, instructor: instructor1Id },
+      { course_id: jsId, title: 'JS Basics Quiz',            lesson_type: 'quiz',     sort_order: 5, instructor: instructor1Id },
 
       // React Course
-      { course_id: reactId, title: 'React Introduction',     lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy3', duration_mins: 12, sort_order: 1 },
-      { course_id: reactId, title: 'useState & useEffect',   lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy4', duration_mins: 20, sort_order: 2 },
-      { course_id: reactId, title: 'React Hooks Quiz',       lesson_type: 'quiz',     sort_order: 3 },
+      { course_id: reactId, title: 'React Introduction',     lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy3', duration_mins: 12, sort_order: 1, instructor: instructor1Id },
+      { course_id: reactId, title: 'useState & useEffect',   lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy4', duration_mins: 20, sort_order: 2, instructor: instructor1Id },
+      { course_id: reactId, title: 'React Hooks Quiz',       lesson_type: 'quiz',     sort_order: 3, instructor: instructor1Id },
 
       // Python Course
-      { course_id: pythonId, title: 'Python Basics',         lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy5', duration_mins: 18, sort_order: 1 },
-      { course_id: pythonId, title: 'NumPy & Pandas Intro',  lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy6', duration_mins: 25, sort_order: 2 },
-      { course_id: pythonId, title: 'Python DS Quiz',        lesson_type: 'quiz',     sort_order: 3 },
+      { course_id: pythonId, title: 'Python Basics',         lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy5', duration_mins: 18, sort_order: 1, instructor: instructor2Id },
+      { course_id: pythonId, title: 'NumPy & Pandas Intro',  lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy6', duration_mins: 25, sort_order: 2, instructor: instructor2Id },
+      { course_id: pythonId, title: 'Data Cleaning Guide',   lesson_type: 'document', file_url: 'https://cdn.learnova.com/pandas-cleaning.pdf', allow_download: true, sort_order: 3, instructor: instructor2Id },
+      { course_id: pythonId, title: 'Python DS Quiz',        lesson_type: 'quiz',     sort_order: 4, instructor: instructor2Id },
+      
+      // CSS Course
+      { course_id: cssId, title: 'CSS Grid vs Flexbox',      lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy7', duration_mins: 22, sort_order: 1, instructor: instructor2Id },
+      { course_id: cssId, title: 'Sass Variables & Mixins',  lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy8', duration_mins: 15, sort_order: 2, instructor: instructor2Id },
+      { course_id: cssId, title: 'CSS Animations Quiz',      lesson_type: 'quiz',     sort_order: 3, instructor: instructor2Id },
+
+      // Node Course
+      { course_id: nodeId, title: 'Express & Middleware',    lesson_type: 'video',    video_url: 'https://youtube.com/watch?v=dummy9', duration_mins: 30, sort_order: 1, instructor: instructor1Id },
     ];
 
     const lessonIds = {};  // { 'JS Basics Quiz': uuid, ... }
@@ -110,7 +161,7 @@ export async function seedDummyData() {
           l.course_id, l.title, l.lesson_type,
           l.video_url ?? null, l.duration_mins ?? null,
           l.file_url ?? null, l.allow_download ?? false,
-          l.sort_order, instructorId,
+          l.sort_order, l.instructor,
         ]
       );
       lessonIds[l.title] = res.rows[0].id;
@@ -136,6 +187,12 @@ export async function seedDummyData() {
         title: 'Python Data Science Quiz',
         points_attempt_1: 12, points_attempt_2: 8, points_attempt_3: 4, points_attempt_4plus: 2,
       },
+      {
+        course_id: cssId,
+        lesson_id: lessonIds['CSS Animations Quiz'],
+        title: 'CSS Animations Quiz',
+        points_attempt_1: 10, points_attempt_2: 7, points_attempt_3: 4, points_attempt_4plus: 2,
+      },
     ];
 
     const quizIds = [];
@@ -155,7 +212,7 @@ export async function seedDummyData() {
       quizIds.push(res.rows[0].id);
     }
 
-    const [jsQuizId, reactQuizId, pythonQuizId] = quizIds;
+    const [jsQuizId, reactQuizId, pythonQuizId, cssQuizId] = quizIds;
 
     // ─── 6. Seed Quiz Questions & Options ────────────────────────────────────
     const quizContent = [
@@ -255,6 +312,29 @@ export async function seedDummyData() {
           },
         ],
       },
+      {
+        quiz_id: cssQuizId,
+        questions: [
+          {
+            text: 'Which property creates a CSS Grid container?',
+            options: [
+              { text: 'display: grid',       correct: true  },
+              { text: 'grid: container',     correct: false },
+              { text: 'display: block',      correct: false },
+              { text: 'grid-template',       correct: false },
+            ],
+          },
+          {
+            text: 'What is a Sass mixin used for?',
+            options: [
+              { text: 'Defining variables',                 correct: false },
+              { text: 'Importing external CSS',             correct: false },
+              { text: 'Creating reusable blocks of styles', correct: true  },
+              { text: 'Compiling Sass to CSS',              correct: false },
+            ],
+          },
+        ],
+      },
     ];
 
     for (const quiz of quizContent) {
@@ -278,20 +358,37 @@ export async function seedDummyData() {
       }
     }
 
-    // ─── 7. Seed an Enrollment for the learner ────────────────────────────────
     await client.query(`
-      INSERT INTO enrollments (user_id, course_id, status)
-      VALUES ($1, $2, 'not_started')
+      INSERT INTO enrollments (user_id, course_id, status, time_spent_mins)
+      VALUES ($1, $2, 'not_started', 0)
       ON CONFLICT (user_id, course_id) DO NOTHING;
-    `, [learnerId, jsId]);
+    `, [learner1Id, jsId]);
+
+    await client.query(`
+      INSERT INTO enrollments (user_id, course_id, status, time_spent_mins)
+      VALUES ($1, $2, 'in_progress', 45)
+      ON CONFLICT (user_id, course_id) DO NOTHING;
+    `, [learner1Id, reactId]);
+    
+    await client.query(`
+      INSERT INTO enrollments (user_id, course_id, status, time_spent_mins, is_paid, amount_paid)
+      VALUES ($1, $2, 'in_progress', 120, true, 999.00)
+      ON CONFLICT (user_id, course_id) DO NOTHING;
+    `, [learner2Id, reactId]);
+
+    await client.query(`
+      INSERT INTO enrollments (user_id, course_id, status, time_spent_mins)
+      VALUES ($1, $2, 'completed', 300)
+      ON CONFLICT (user_id, course_id) DO NOTHING;
+    `, [learner2Id, pythonId]);
 
     await client.query('COMMIT');
     console.log('🌱 Seed complete!');
-    console.log('   → 3 courses (JS, React, Python)');
-    console.log('   → 10 lessons across all courses');
-    console.log('   → 3 quizzes with 3 questions & 4 options each');
-    console.log('   → 1 instructor (john@learnova.com)');
-    console.log('   → 1 learner (jane@learnova.com) enrolled in JS course');
+    console.log('   → 5 courses (JS, React, Python, CSS, Node)');
+    console.log('   → 16 lessons across all courses');
+    console.log('   → 4 quizzes');
+    console.log('   → 2 instructors (john@learnova.com, alice@learnova.com)');
+    console.log('   → 2 learners (jane@learnova.com, bob@learnova.com) with enrollments');
 
   } catch (err) {
     await client.query('ROLLBACK');
