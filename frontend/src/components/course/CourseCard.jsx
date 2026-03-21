@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveMediaUrl } from '../../lib/media';
 
 const getCTA = (course, isAuthenticated) => {
   const isEnrolled = !!(course.isEnrolled || course.enrolled || course.enrollment);
@@ -33,6 +34,7 @@ const CourseCard = ({ course, isAuthenticated }) => {
   const cta = getCTA(course, isAuthenticated);
   const completion = Math.max(0, Math.min(100, Number(course.completionPercent || course.progress || 0)));
   const isEnrolled = !!(course.isEnrolled || course.enrolled || course.enrollment);
+  const coverSrc = resolveMediaUrl(course.coverImageUrl || course.cover_image_url || course.coverImage);
 
   const handleClick = () => {
     if (cta.action === 'login') {
@@ -44,9 +46,9 @@ const CourseCard = ({ course, isAuthenticated }) => {
 
   return (
     <article className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
-      {course.cover_image_url || course.coverImage ? (
+      {coverSrc ? (
         <img
-          src={course.cover_image_url || course.coverImage}
+          src={coverSrc}
           alt={course.title || 'Course cover'}
           className="h-44 w-full object-cover"
         />

@@ -167,6 +167,60 @@ const updateLesson = async (req, res, next) => {
   }
 };
 
+// ── 3b. uploadLessonFile ────────────────────────────────────────
+
+const uploadLessonFile = async (req, res, next) => {
+  try {
+    const access = await verifyLessonAccess(req.params.id, req.user);
+    if (access.error) {
+      return res.status(access.status).json({ success: false, message: access.error });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'File is required' });
+    }
+
+    const updated = await prisma.lesson.update({
+      where: { id: req.params.id },
+      data: {
+        fileUrl: `/uploads/${req.file.filename}`,
+        lessonType: 'document',
+      },
+    });
+
+    return res.status(201).json({ success: true, data: { lesson: updated } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── 3c. uploadLessonImage ───────────────────────────────────────
+
+const uploadLessonImage = async (req, res, next) => {
+  try {
+    const access = await verifyLessonAccess(req.params.id, req.user);
+    if (access.error) {
+      return res.status(access.status).json({ success: false, message: access.error });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Image file is required' });
+    }
+
+    const updated = await prisma.lesson.update({
+      where: { id: req.params.id },
+      data: {
+        fileUrl: `/uploads/${req.file.filename}`,
+        lessonType: 'image',
+      },
+    });
+
+    return res.status(201).json({ success: true, data: { lesson: updated } });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ── 4. deleteLesson ──────────────────────────────────────────────
 
 const deleteLesson = async (req, res, next) => {
@@ -325,6 +379,8 @@ module.exports = {
   getLessonsByCourse,
   createLesson,
   updateLesson,
+  uploadLessonFile,
+  uploadLessonImage,
   deleteLesson,
   reorderLessons,
   addAttachment,

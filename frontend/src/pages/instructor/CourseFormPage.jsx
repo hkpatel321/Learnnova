@@ -8,6 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import debounce from 'lodash.debounce';
 import axios from '../../lib/axios';
+import { resolveMediaUrl } from '../../lib/media';
 
 import Modal from '../../components/ui/Modal';
 import LessonsTab from '../../components/course/LessonsTab';
@@ -41,6 +42,7 @@ const CourseFormPage = () => {
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const [coverLoadFailed, setCoverLoadFailed] = useState(false);
 
   // Fetch course data
   const { data: course, isLoading } = useQuery({
@@ -101,6 +103,8 @@ const CourseFormPage = () => {
         });
     }
   }, [course]);
+
+  const coverImageSrc = resolveMediaUrl(course?.coverImage || course?.coverImageUrl);
 
   // Auto-save mutation
   const saveMutation = useMutation({
@@ -176,7 +180,19 @@ const CourseFormPage = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      const uploadedUrl = res?.data?.data?.coverImageUrl;
+      if (uploadedUrl) {
+        queryClient.setQueryData(['course', courseId], (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            coverImageUrl: uploadedUrl,
+            coverImage: uploadedUrl,
+          };
+        });
+      }
+      setCoverLoadFailed(false);
       queryClient.invalidateQueries({ queryKey: ['course', courseId] });
       toast.success('Cover image updated');
     },
@@ -186,6 +202,7 @@ const CourseFormPage = () => {
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      setCoverLoadFailed(false);
       uploadCoverMutation.mutate(file);
     }
   };
@@ -306,9 +323,14 @@ const CourseFormPage = () => {
                <Loader2 className="w-8 h-8 text-[#2D31D4] animate-spin mb-2" />
                <span className="text-sm font-medium text-gray-700">Uploading...</span>
              </div>
-          ) : course?.coverImage ? (
+          ) : coverImageSrc && !coverLoadFailed ? (
             <>
-              <img src={course.coverImage} alt="Cover" className="w-full h-full object-cover" />
+              <img
+                src={coverImageSrc}
+                alt="Cover"
+                className="w-full h-full object-cover"
+                onError={() => setCoverLoadFailed(true)}
+              />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                 <span className="text-white font-medium flex items-center gap-2">
                   <Upload className="w-5 h-5" />

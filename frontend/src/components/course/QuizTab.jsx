@@ -119,7 +119,13 @@ const QuizTab = ({ courseId }) => {
 
   const createQuestionMutation = useMutation({
     mutationFn: async (quizId) => {
-      const res = await axios.post(`/quizzes/${quizId}/questions`, {});
+      const res = await axios.post(`/quizzes/${quizId}/questions`, {
+        questionText: 'New Question',
+        options: [
+          { optionText: 'Option 1', isCorrect: true },
+          { optionText: 'Option 2', isCorrect: false },
+        ],
+      });
       return res.data?.data?.question || res.data?.question || res.data;
     },
     onSuccess: (createdQuestion) => {

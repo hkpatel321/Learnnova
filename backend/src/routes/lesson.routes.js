@@ -26,9 +26,20 @@ router.post(
   requireRole('instructor', 'admin'),
   [
     body('title').trim().notEmpty().withMessage('Title is required'),
+    body('type')
+      .optional()
+      .isIn(['video', 'document', 'image', 'quiz'])
+      .withMessage('type must be video, document, image, or quiz'),
     body('lessonType')
+      .optional()
       .isIn(['video', 'document', 'image', 'quiz'])
       .withMessage('lessonType must be video, document, image, or quiz'),
+    body().custom((value) => {
+      if (!value?.type && !value?.lessonType) {
+        throw new Error('Either type or lessonType is required');
+      }
+      return true;
+    }),
   ],
   validate,
   lessonController.createLesson
@@ -58,6 +69,22 @@ router.put(
   requireRole('instructor', 'admin'),
   uploadAny.single('file'),
   lessonController.updateLesson
+);
+
+// POST /api/lessons/:id/file
+router.post(
+  '/lessons/:id/file',
+  requireRole('instructor', 'admin'),
+  uploadAny.single('file'),
+  lessonController.uploadLessonFile
+);
+
+// POST /api/lessons/:id/image
+router.post(
+  '/lessons/:id/image',
+  requireRole('instructor', 'admin'),
+  uploadAny.single('file'),
+  lessonController.uploadLessonImage
 );
 
 // DELETE /api/lessons/:id

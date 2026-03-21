@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, LayoutGrid, List, Plus, Edit, Share2, MoreVertical, Eye, BookOpen, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { resolveMediaUrl } from '../../lib/media';
 
 // Modal component inline since it wasn't requested for separate modification but expected to exist/work
 import Modal from '../../components/ui/Modal';
@@ -88,11 +89,13 @@ const CoursesPage = () => {
 
   // Common Card Component
   const CourseCard = ({ course }) => {
+    const coverSrc = resolveMediaUrl(course.coverImageUrl || course.cover_image_url || course.coverImage);
+
     return (
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 relative group hover:border-[#2D31D4] transition-colors">
         {/* Cover */}
-        {course.coverImage ? (
-          <img src={course.coverImage} alt={course.title} className="w-full h-32 object-cover rounded-lg" />
+        {coverSrc ? (
+          <img src={coverSrc} alt={course.title} className="w-full h-32 object-cover rounded-lg" />
         ) : (
           <div className="w-full h-32 rounded-lg bg-gradient-to-br from-[#2D31D4] to-[#1a1dd6] flex items-center justify-center">
             <span className="text-4xl font-bold text-white opacity-50">
@@ -296,12 +299,14 @@ const CoursesPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredCourses.map(course => (
+              {filteredCourses.map((course) => {
+                const coverSrc = resolveMediaUrl(course.coverImageUrl || course.cover_image_url || course.coverImage);
+                return (
                 <tr key={course.id} className="hover:bg-[#F4F5FF] transition-colors group">
                   <td className="px-6 py-3">
                     <div className="flex items-center gap-3">
-                       {course.coverImage ? (
-                        <img src={course.coverImage} alt="" className="w-10 h-10 rounded shadow-sm object-cover" />
+                       {coverSrc ? (
+                        <img src={coverSrc} alt="" className="w-10 h-10 rounded shadow-sm object-cover" />
                       ) : (
                         <div className="w-10 h-10 rounded bg-[#2D31D4] bg-opacity-10 text-[#2D31D4] flex items-center justify-center font-bold">
                           {course.title.charAt(0)}
@@ -347,7 +352,8 @@ const CoursesPage = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               
               {filteredCourses.length === 0 && (
                 <tr>

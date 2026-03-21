@@ -44,7 +44,10 @@ const LessonsTab = ({ courseId }) => {
   }, [lessons]);
 
   const deleteLessonMutation = useMutation({
-    mutationFn: async (lessonId) => axios.delete(`/lessons/${lessonId}`),
+    mutationFn: async (lessonId) =>
+      axios.delete(`/lessons/${lessonId}`, {
+        headers: { 'X-Confirm-Delete': 'true' },
+      }),
     onSuccess: (_, lessonId) => {
       setLessonsState((prev) => prev.filter((l) => l.id !== lessonId));
       setConfirmDeleteFor(null);
