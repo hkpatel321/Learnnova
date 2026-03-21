@@ -365,6 +365,7 @@ const getCatalog = async (req, res, next) => {
         totalDurationMins,
         reviewCount,
         avgRating,
+        requiresPayment: c.accessRule === 'payment',
       };
     });
 
@@ -441,6 +442,7 @@ const getCourseDetail = async (req, res, next) => {
           totalDurationMins,
           reviewCount,
           avgRating,
+          requiresPayment: course.accessRule === 'payment',
         },
       },
     });
@@ -460,3 +462,4 @@ module.exports = {
   getCatalog,
   getCourseDetail,
 };
+

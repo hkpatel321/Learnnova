@@ -148,6 +148,9 @@ const getCourseProgress = async (req, res, next) => {
       success: true,
       data: {
         isEnrolled: true,
+        isPaid: enrollment.isPaid,
+        paidAt: enrollment.paidAt,
+        amountPaid: enrollment.amountPaid,
         status: enrollment.status,
         courseTitle: enrollment.course.title,
         completionPct,

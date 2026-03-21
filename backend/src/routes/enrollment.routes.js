@@ -56,6 +56,23 @@ router.get(
   enrollmentController.getAttendees
 );
 
+router.post(
+  '/courses/:courseId/contact',
+  requireRole('instructor', 'admin'),
+  [
+    body('subject')
+      .trim()
+      .notEmpty()
+      .withMessage('Subject is required'),
+    body('message')
+      .trim()
+      .notEmpty()
+      .withMessage('Message is required'),
+  ],
+  validate,
+  enrollmentController.contactAttendees
+);
+
 // ── Invitation Acceptance ──────────────────────────────────────────
 
 // POST /api/invitations/:token/accept

@@ -1,5 +1,6 @@
 const prisma = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
+const { sendCourseContactEmail, sendCourseInvitationEmail } = require('../utils/mailer');
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -44,9 +45,22 @@ const enrollInCourse = async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'Invitation required' });
       }
     } else if (course.accessRule === 'payment') {
-      // For this hackathon, we assume payment endpoints would set isPaid=true
-      // This endpoint just enforces that they cannot self-enroll for free
-      return res.status(402).json({ success: false, message: 'Payment required' });
+      const verifiedPayment = await prisma.payment.findFirst({
+        where: {
+          userId,
+          courseId,
+          status: 'verified',
+        },
+        orderBy: { paidAt: 'desc' },
+      });
+
+      if (!verifiedPayment) {
+        return res.status(402).json({
+          success: false,
+          message: 'Payment required',
+          code: 'PAYMENT_REQUIRED',
+        });
+      }
     }
 
     // Enroll the user
@@ -55,6 +69,9 @@ const enrollInCourse = async (req, res, next) => {
         userId,
         courseId,
         status: 'not_started',
+        isPaid: course.accessRule === 'payment',
+        paidAt: course.accessRule === 'payment' ? new Date() : null,
+        amountPaid: course.accessRule === 'payment' ? course.price : null,
       },
     });
 
@@ -176,9 +193,21 @@ const addAttendees = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'emails array required' });
     }
 
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { title: true },
+    });
+    const inviter = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { name: true },
+    });
+    const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
     let invited = 0;
     let alreadyEnrolled = 0;
     const inviteLinks = [];
+    let emailsSent = 0;
+    const emailFailures = [];
 
     // Expire invitations in 7 days
     const expiresAt = new Date();
@@ -201,6 +230,7 @@ const addAttendees = async (req, res, next) => {
       const user = await prisma.user.findUnique({ where: { email: lowerEmail } });
 
       const token = uuidv4();
+      const inviteUrl = `${frontendBaseUrl}/invitations/${token}`;
 
       await prisma.$transaction(async (tx) => {
         const inv = await tx.courseInvitation.create({
@@ -234,13 +264,26 @@ const addAttendees = async (req, res, next) => {
         }
 
         invited++;
-        inviteLinks.push({ email: lowerEmail, token, status: inv.status });
+        inviteLinks.push({ email: lowerEmail, token, status: inv.status, inviteUrl });
       });
+
+      try {
+        await sendCourseInvitationEmail({
+          to: lowerEmail,
+          learnerName: user?.name || null,
+          courseTitle: course?.title || 'your course',
+          inviterName: inviter?.name || req.user.email,
+          inviteUrl,
+        });
+        emailsSent++;
+      } catch (mailErr) {
+        emailFailures.push({ email: lowerEmail, reason: mailErr.message });
+      }
     }
 
     return res.json({
       success: true,
-      data: { invited, alreadyEnrolled, inviteLinks },
+      data: { invited, alreadyEnrolled, inviteLinks, emailsSent, emailFailures },
     });
   } catch (err) {
     next(err);
@@ -286,6 +329,84 @@ const getAttendees = async (req, res, next) => {
     });
 
     return res.json({ success: true, data: { attendees: data } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const contactAttendees = async (req, res, next) => {
+  try {
+    const { courseId } = req.params;
+    const { subject, message } = req.body;
+
+    const access = await verifyCourseAccess(courseId, req.user);
+    if (access.error) {
+      return res.status(access.status).json({ success: false, message: access.error });
+    }
+
+    if (!subject?.trim() || !message?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'subject and message are required',
+      });
+    }
+
+    const [course, sender, attendees] = await Promise.all([
+      prisma.course.findUnique({
+        where: { id: courseId },
+        select: { title: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { name: true, email: true },
+      }),
+      prisma.enrollment.findMany({
+        where: { courseId },
+        include: {
+          user: {
+            select: { name: true, email: true },
+          },
+        },
+      }),
+    ]);
+
+    if (attendees.length === 0) {
+      return res.json({
+        success: true,
+        data: { sent: 0, failed: 0, failures: [] },
+      });
+    }
+
+    let sent = 0;
+    const failures = [];
+
+    for (const attendee of attendees) {
+      try {
+        await sendCourseContactEmail({
+          to: attendee.user.email,
+          learnerName: attendee.user.name,
+          courseTitle: course?.title || 'your course',
+          senderName: sender?.name || sender?.email || 'Course admin',
+          subject: subject.trim(),
+          message: message.trim(),
+        });
+        sent++;
+      } catch (mailErr) {
+        failures.push({
+          email: attendee.user.email,
+          reason: mailErr.message,
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        sent,
+        failed: failures.length,
+        failures,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -363,5 +484,6 @@ module.exports = {
   getEnrollmentById,
   addAttendees,
   getAttendees,
+  contactAttendees,
   acceptInvitation,
 };

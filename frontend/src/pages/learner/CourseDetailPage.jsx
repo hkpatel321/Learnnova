@@ -1,12 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Loader2, Search, Star, X, Check, PlayCircle, Clock, CheckCircle2, FileText, Lock, ChevronDown, ListVideo, FileEdit, Undo, Settings2 } from 'lucide-react';
+import { Loader2, Search, Star, X, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 import useAuthStore from '../../store/authStore';
-import CourseCard from '../../components/course/CourseCard';
 
 const EMPTY_ARRAY = [];
 
@@ -135,13 +134,18 @@ const ReviewModal = ({ open, onOpenChange, onSubmit, isSubmitting }) => {
 export default function CourseDetailPage() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const isLearner = user?.role === 'learner';
 
   const [activeTab, setActiveTab] = useState('overview');
   const [lessonSearch, setLessonSearch] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [visibleReviews, setVisibleReviews] = useState(5);
+  const handledStripeSessionIdRef = useRef(null);
+  const stripeStatus = searchParams.get('stripe_status');
+  const stripeSessionId = searchParams.get('session_id');
 
   const { data: course, isLoading: courseLoading } = useQuery({
     queryKey: ['course-detail', courseId],
@@ -170,7 +174,7 @@ export default function CourseDetailPage() {
       const res = await axios.get(`/progress/courses/${courseId}`);
       return res.data?.data || res.data;
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isLearner,
   });
 
   const submitReviewMutation = useMutation({
@@ -182,6 +186,89 @@ export default function CourseDetailPage() {
     },
     onError: () => toast.error('Failed to submit review'),
   });
+
+  const enrollMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axios.post(`/courses/${courseId}/enroll`);
+      return res.data?.data?.enrollment || res.data?.enrollment;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+        queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
+      ]);
+    },
+  });
+
+  const verifyPaymentMutation = useMutation({
+    mutationFn: async (payload) => {
+      const res = await axios.post(`/courses/${courseId}/payment/verify`, payload);
+      return res.data?.data || res.data;
+    },
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+        queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-payments'] }),
+      ]);
+
+      const paymentId =
+        data?.payment?.providerPaymentId ||
+        data?.payment?.provider_payment_id ||
+        data?.payment?.providerOrderId ||
+        'Stripe test payment';
+      toast.success(`Stripe payment verified: ${paymentId}`);
+    },
+    onError: (error) => {
+      const message = error?.response?.data?.message || 'Payment verification failed';
+      toast.error(message);
+    },
+  });
+
+  const createPaymentOrderMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axios.post(`/courses/${courseId}/payment/order`);
+      return res.data?.data || res.data;
+    },
+  });
+
+  useEffect(() => {
+    if (!stripeStatus) return;
+
+    if (stripeStatus === 'cancelled') {
+      toast('Stripe test checkout was cancelled', { icon: '💳' });
+      navigate(`/courses/${courseId}`, { replace: true });
+      return;
+    }
+
+    if (
+      stripeStatus !== 'success' ||
+      !stripeSessionId ||
+      handledStripeSessionIdRef.current === stripeSessionId ||
+      !isLearner ||
+      !isAuthenticated
+    ) {
+      return;
+    }
+
+    handledStripeSessionIdRef.current = stripeSessionId;
+    verifyPaymentMutation.mutate(
+      { sessionId: stripeSessionId },
+      {
+        onSettled: () => {
+          navigate(`/courses/${courseId}`, { replace: true });
+        },
+      }
+    );
+  }, [
+    courseId,
+    isAuthenticated,
+    isLearner,
+    navigate,
+    stripeSessionId,
+    stripeStatus,
+    verifyPaymentMutation,
+  ]);
 
   const lessons = Array.isArray(course?.lessons) ? course.lessons : EMPTY_ARRAY;
   const filteredLessons = useMemo(() => {
@@ -252,7 +339,7 @@ export default function CourseDetailPage() {
       return { label: '✓ Completed', className: 'border border-green-300 text-white bg-transparent', action: 'completed' };
     }
     if (requiresPayment && !isPaid && !isEnrolled) {
-      return { label: `Buy — ₹${price}`, className: 'bg-amber-500 text-black', action: 'buy' };
+      return { label: `Buy with Stripe — ₹${price}`, className: 'bg-amber-500 text-black', action: 'buy' };
     }
     if (isInProgress) {
       return { label: 'Continue Learning →', className: 'bg-white text-[#2D31D4]', action: 'continue' };
@@ -263,6 +350,11 @@ export default function CourseDetailPage() {
     return { label: 'Start Learning →', className: 'bg-white text-[#2D31D4]', action: 'start' };
   })();
 
+  const isBusy =
+    enrollMutation.isPending ||
+    createPaymentOrderMutation.isPending ||
+    verifyPaymentMutation.isPending;
+
   const completedCount = lessons.filter((lesson) => completedLessonIds.has(lesson.id)).length;
   const remainingCount = Math.max(0, lessons.length - completedCount);
 
@@ -272,6 +364,73 @@ export default function CourseDetailPage() {
       return;
     }
     navigate(`/learn/${courseId}/${lesson.id}`);
+  };
+
+  const openFirstLesson = () => {
+    if (lessons[0]?.id) {
+      navigate(`/learn/${courseId}/${lessons[0].id}`);
+      return true;
+    }
+    return false;
+  };
+
+  const handleEnrollment = async () => {
+    try {
+      await enrollMutation.mutateAsync();
+      toast.success("You're enrolled! Start learning.");
+      openFirstLesson();
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Unable to enroll right now';
+      toast.error(message);
+    }
+  };
+
+  const handlePurchase = async () => {
+    try {
+      const orderData = await createPaymentOrderMutation.mutateAsync();
+
+      if (orderData?.alreadyPaid) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, isAuthenticated] }),
+          queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
+        ]);
+        toast.success('Payment already verified for this course');
+        openFirstLesson();
+        return;
+      }
+
+      if (!orderData?.checkoutUrl) {
+        toast.error('Stripe checkout URL was not created');
+        return;
+      }
+
+      toast('Redirecting to Stripe test checkout...', { icon: '💳' });
+      window.location.assign(orderData.checkoutUrl);
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Unable to start payment';
+      toast.error(message);
+    }
+  };
+
+  const handlePrimaryAction = async () => {
+    if (!isLearner) {
+      toast('Preview mode for instructors and admins', { icon: '👁️' });
+      return;
+    }
+
+    if (cta.action === 'buy') {
+      await handlePurchase();
+      return;
+    }
+
+    if (isEnrolled) {
+      if (!openFirstLesson()) {
+        toast('This course does not have lessons yet', { icon: '📚' });
+      }
+      return;
+    }
+
+    await handleEnrollment();
   };
 
   if (courseLoading) {
@@ -320,21 +479,24 @@ export default function CourseDetailPage() {
 
             <button
               type="button"
-              className={`mt-6 h-12 w-48 rounded-lg font-semibold ${cta.className}`}
-              onClick={() => {
-                if (cta.action === 'buy') {
-                  toast('Purchase flow is not implemented yet', { icon: '💳' });
-                  return;
-                }
-                if (isEnrolled && lessons[0]?.id) {
-                  navigate(`/learn/${courseId}/${lessons[0].id}`);
-                  return;
-                }
-                toast.success("You're enrolled! Start learning 🎓");
-              }}
+              disabled={isBusy}
+              className={`mt-6 h-12 w-48 rounded-lg font-semibold disabled:opacity-70 ${isLearner ? cta.className : 'bg-white text-[#2D31D4]'}`}
+              onClick={handlePrimaryAction}
             >
-              {cta.label}
+              {isBusy ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : isLearner ? cta.label : 'Preview Mode'}
             </button>
+
+            {isPaid ? (
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                Stripe test payment verified for this course
+              </div>
+            ) : null}
+
+            {requiresPayment && !isPaid ? (
+              <p className="mt-3 max-w-md text-xs text-white/80">
+                Demo card: 4242 4242 4242 4242, any future expiry, any CVC, any ZIP/postal code.
+              </p>
+            ) : null}
           </div>
 
           <div className="w-80 hidden lg:block">
@@ -436,15 +598,20 @@ export default function CourseDetailPage() {
                 <div className="my-4 border-t border-gray-200" />
                 <button
                   type="button"
-                  className="w-full py-2.5 rounded-lg bg-[#2D31D4] text-white text-sm font-semibold hover:bg-blue-800"
+                  disabled={isBusy}
+                  onClick={handlePrimaryAction}
+                  className="w-full py-2.5 rounded-lg bg-[#2D31D4] text-white text-sm font-semibold hover:bg-blue-800 disabled:opacity-70"
                 >
-                  {isInProgress ? 'Continue Learning →' : isEnrolled ? 'Open Course' : 'Enroll Now'}
+                  {isBusy ? 'Processing...' : isInProgress ? 'Continue Learning →' : isEnrolled ? 'Open Course' : requiresPayment && !isPaid ? `Pay with Stripe ₹${price}` : 'Enroll Now'}
                 </button>
                 <div className="mt-4 space-y-2 text-sm text-gray-700">
                   <p>📚 {lessonCount} Lessons</p>
                   <p>✓ {completedCount} Completed</p>
                   <p>○ {remainingCount} Remaining</p>
                   <p>⏱ Total Duration: {formatMinutes(totalDuration)}</p>
+                  {requiresPayment ? <p>💳 Stripe test checkout enabled</p> : null}
+                  {requiresPayment && !isPaid ? <p>🧪 Use card 4242 4242 4242 4242 for demo</p> : null}
+                  {isPaid ? <p>✓ Stripe test payment received</p> : null}
                 </div>
               </div>
             </aside>
@@ -458,7 +625,7 @@ export default function CourseDetailPage() {
                   <StarsDisplay rating={avgRating} size={20} />
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{reviewCount} reviews</p>
-                {isAuthenticated && isEnrolled ? (
+                {isAuthenticated && isLearner && isEnrolled ? (
                   <button
                     type="button"
                     onClick={() => setShowReviewModal(true)}

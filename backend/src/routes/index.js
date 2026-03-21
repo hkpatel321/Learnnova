@@ -21,11 +21,17 @@ router.use('/', quizRoutes);
 const enrollmentRoutes = require('./enrollment.routes');
 router.use('/', enrollmentRoutes);
 
+const paymentRoutes = require('./payment.routes');
+router.use('/', paymentRoutes);
+
 const reportingRoutes = require('./reporting.routes');
 router.use('/reporting', reportingRoutes);
 
 const progressRoutes = require('./progress.routes');
 router.use('/', progressRoutes);
+
+const userRoutes = require('./user.routes');
+router.use('/', userRoutes);
 
 
 

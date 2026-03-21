@@ -46,18 +46,29 @@ export default function MyCoursesPage() {
         const course = e.course || {};
         return {
           id: course.id || e.courseId,
-          title: course.title || 'Untitled Course',
-          description: course.description || course.shortDesc || '',
-          tags: course.tags || [],
-          coverImage: course.coverImageUrl || null,
-          published: course.isPublished,
+          title: course.title || e.title || 'Untitled Course',
+          description: course.description || course.shortDesc || e.shortDesc || '',
+          tags: course.tags || e.tags || [],
+          coverImage: course.coverImageUrl || e.coverImageUrl || null,
+          published: course.isPublished ?? true,
           status: e.status,
-          progress: e.completionPct || 0,
-          completionPercent: e.completionPct || 0,
+          progress: e.completionPct || e.completion_pct || 0,
+          completionPercent: e.completionPct || e.completion_pct || 0,
+          isPaid: e.isPaid,
+          amountPaid: e.amountPaid,
+          paidAt: e.paidAt,
           isEnrolled: true,
           enrolled: true,
         };
       });
+    },
+  });
+
+  const { data: payments = [] } = useQuery({
+    queryKey: ['my-payments'],
+    queryFn: async () => {
+      const res = await axios.get('/payments/me');
+      return res.data?.data?.payments || [];
     },
   });
 
@@ -111,6 +122,27 @@ export default function MyCoursesPage() {
             <p className="text-sm text-gray-700">📚 {stats.enrolled} Enrolled</p>
             <p className="text-sm text-gray-700">✓ {stats.completed} Completed</p>
             <p className="text-sm text-gray-700">▶ {stats.inProgress} In Progress</p>
+          </div>
+
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <p className="text-sm font-semibold text-gray-900">Recent Payments</p>
+            {payments.length === 0 ? (
+              <p className="mt-2 text-xs text-gray-500">Your Stripe test payments will appear here.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {payments.slice(0, 3).map((payment) => (
+                  <div key={payment.id} className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-emerald-800">{payment.course?.title || 'Course payment'}</p>
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Received Stripe test payment of Rs. {Number(payment.amount || 0).toFixed(2)}
+                    </p>
+                    <p className="mt-1 text-[11px] text-emerald-700/80">
+                      Ref: {payment.providerPaymentId || payment.providerOrderId}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </aside>
