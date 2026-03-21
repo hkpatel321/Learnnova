@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  ArrowLeft, Upload, Loader2, X, Plus, 
+  ArrowLeft, Upload, Loader2, X,
   Globe, Lock, Shield, Mail, CreditCard 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import debounce from 'lodash.debounce';
 import axios from '../../lib/axios';
 import { resolveMediaUrl } from '../../lib/media';
+import { getApiErrorMessage } from '../../lib/apiError';
 
 import Modal from '../../components/ui/Modal';
 import LessonsTab from '../../components/course/LessonsTab';
@@ -30,7 +31,6 @@ const CourseFormPage = () => {
     accessRule: 'open',
     price: '',
     description: '',
-    // Just a stub for responsibleUser, you would fetch real users here
     responsibleUserId: ''
   });
   const [tagInput, setTagInput] = useState('');
@@ -56,6 +56,7 @@ const CourseFormPage = () => {
            if (courseData) {
              courseData.published = courseData.isPublished;
              courseData.coverImage = courseData.coverImageUrl;
+             courseData.responsibleUserId = courseData.responsibleUserId || courseData.responsibleId || '';
            }
            return courseData;
       } catch {
@@ -104,18 +105,39 @@ const CourseFormPage = () => {
     }
   }, [course]);
 
+  const { data: users = [] } = useQuery({
+    queryKey: ['course-users'],
+    queryFn: async () => {
+      try {
+        const res = await axios.get('/users');
+        const data = res.data?.data?.users || res.data?.users || res.data;
+        return Array.isArray(data) ? data : [];
+      } catch {
+        return [];
+      }
+    },
+  });
+
   const coverImageSrc = resolveMediaUrl(course?.coverImage || course?.coverImageUrl);
 
   // Auto-save mutation
   const saveMutation = useMutation({
     mutationFn: async (data) => {
-      return axios.put(`/courses/${courseId}`, data);
+      const payload = {
+        ...data,
+        responsibleId: data.responsibleUserId || null,
+      };
+      delete payload.responsibleUserId;
+      return axios.put(`/courses/${courseId}`, payload);
     },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => setSaveStatus('saved'),
-    onError: () => {
+    onSuccess: () => {
+      setSaveStatus('saved');
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+    },
+    onError: (error) => {
       setSaveStatus('unsaved');
-      toast.error('Failed to save changes');
+      toast.error(getApiErrorMessage(error, 'Failed to save changes'));
     }
   });
 
@@ -213,24 +235,31 @@ const CourseFormPage = () => {
       return axios.post(`/courses/${courseId}/attendees`, { emails: emails.split(/[\n,]+/).map(e => e.trim()).filter(Boolean) });
     },
     onSuccess: (res) => {
-      toast.success(`${res.data?.count || 1} invitations sent`);
+      const invited = res.data?.data?.invited ?? 0;
+      const emailsSent = res.data?.data?.emailsSent ?? 0;
+      toast.success(
+        emailsSent > 0
+          ? `${emailsSent} attendee email${emailsSent === 1 ? '' : 's'} sent`
+          : `${invited} attendee${invited === 1 ? '' : 's'} added`
+      );
       setIsAddAttendeesOpen(false);
       setAttendeeEmails('');
     },
-    onError: () => toast.error('Failed to send invitations')
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to add attendees'))
   });
 
   const contactMutation = useMutation({
     mutationFn: async (data) => {
       return axios.post(`/courses/${courseId}/contact`, data);
     },
-    onSuccess: () => {
-      toast.success('Message sent to all attendees');
+    onSuccess: (res) => {
+      const sent = res.data?.data?.sent ?? 0;
+      toast.success(`Message sent to ${sent} attendee${sent === 1 ? '' : 's'}`);
       setIsContactOpen(false);
       setContactSubject('');
       setContactMessage('');
     },
-    onError: () => toast.error('Failed to send message')
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to send message'))
   });
 
   if (isLoading) {
@@ -240,8 +269,8 @@ const CourseFormPage = () => {
   return (
     <div className="pb-20">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4 flex-1">
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 border-b border-gray-200 px-4 md:px-6 py-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between shadow-sm">
+        <div className="flex min-w-0 items-center gap-3 md:gap-4 flex-1">
           <button 
             onClick={() => navigate('/backoffice/courses')}
             className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
@@ -249,19 +278,19 @@ const CourseFormPage = () => {
             <ArrowLeft className="w-5 h-5" />
           </button>
           
-          <div className="w-px h-6 bg-gray-200 mx-2"></div>
+          <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1 md:mx-2"></div>
           
           <input 
             type="text"
             value={formData.title}
             onChange={(e) => handleChange('title', e.target.value)}
-            className="text-[18px] font-bold text-gray-900 border-none px-0 py-1 hover:bg-gray-50 focus:bg-white focus:ring-0 w-full max-w-lg rounded transition-colors bg-transparent outline-none"
+            className="min-w-0 flex-1 text-[18px] font-bold text-gray-900 border-none px-0 py-1 hover:bg-gray-50 focus:bg-white focus:ring-0 w-full max-w-lg rounded transition-colors bg-transparent outline-none"
             placeholder="Course Title"
           />
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-xs font-medium text-gray-500 flex items-center gap-1.5 w-24 justify-end">
+        <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:items-center xl:justify-end xl:gap-4">
+          <div className="text-xs font-medium text-gray-500 flex items-center gap-1.5 xl:w-24 xl:justify-end">
             {saveStatus === 'saving' && <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>}
             {saveStatus === 'saved' && <span className="text-green-600">Saved ✓</span>}
             {saveStatus === 'unsaved' && <span>Unsaved</span>}
@@ -279,22 +308,22 @@ const CourseFormPage = () => {
             {course?.published ? '✓ Published' : 'Unpublished'}
           </button>
 
-          <div className="flex items-center gap-2 border-l pl-4 border-gray-200">
+          <div className="flex flex-wrap items-center gap-2 xl:border-l xl:pl-4 xl:border-gray-200">
             <button 
               onClick={() => window.open(`/courses/${courseId}`, '_blank')}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
               Preview
             </button>
             <button 
               onClick={() => setIsAddAttendeesOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium text-[#2D31D4] border border-[#2D31D4] rounded-lg hover:bg-[#EEF0FF] transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-[#2D31D4] border border-[#2D31D4] rounded-lg hover:bg-[#EEF0FF] transition-colors whitespace-nowrap"
             >
               Add Attendees
             </button>
             <button 
               onClick={() => setIsContactOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-[#2D31D4] rounded-lg hover:bg-blue-800 transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-white bg-[#2D31D4] rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap"
             >
               Contact Attendees
             </button>
@@ -420,8 +449,11 @@ const CourseFormPage = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none bg-white"
             >
               <option value="">Select an instructor...</option>
-              <option value="1">Jane Doe</option>
-              <option value="2">John Smith</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name || user.email || `User ${user.id}`}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -538,7 +570,7 @@ const CourseFormPage = () => {
                 </select>
               </div>
 
-               <div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Access Rule</label>
                 <select 
                   value={formData.accessRule}
@@ -548,6 +580,22 @@ const CourseFormPage = () => {
                   <option value="open">Open Availability</option>
                   <option value="invitation">On Invitation</option>
                   <option value="payment">On Payment</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Course Admin</label>
+                <select
+                  value={formData.responsibleUserId}
+                  onChange={(e) => handleChange('responsibleUserId', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none"
+                >
+                  <option value="">Select an instructor...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name || user.email || `User ${user.id}`}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

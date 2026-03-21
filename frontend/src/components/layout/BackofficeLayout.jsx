@@ -80,7 +80,7 @@ const BackofficeLayout = () => {
       {/* Main Content Area */}
       <div className="flex-1 md:ml-60 flex flex-col h-screen overflow-hidden">
         {/* Topbar */}
-        <header className="sticky top-0 bg-white border-b border-gray-200 h-14 flex items-center justify-between px-6 z-10">
+        <header className="sticky top-0 bg-white border-b border-gray-200 h-14 flex items-center justify-between px-6 z-40">
           <h1 className="text-[18px] font-bold text-gray-900 font-plus-jakarta-sans">{pageTitle}</h1>
           
           <div className="relative">
@@ -95,7 +95,7 @@ const BackofficeLayout = () => {
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-100 py-1 z-50">
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-100 py-1 z-[70]">
                 <div className="px-4 py-2 border-b border-gray-100">
                   <p className="text-sm font-medium text-gray-900 truncate">{user?.name || 'User Name'}</p>
                   <p className="text-xs text-gray-500 truncate">{user?.email || 'user@example.com'}</p>

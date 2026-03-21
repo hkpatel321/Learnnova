@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,10 +10,12 @@ import {
   Paperclip,
   Link as LinkIcon,
   CheckCircle2,
+  Clock3,
 } from 'lucide-react';
 import ReactPlayer from 'react-player';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { getApiErrorMessage } from '../../lib/apiError';
 
 const lessonTypes = [
   { value: 'video', label: 'Video', emoji: '🎬' },
@@ -48,6 +50,11 @@ const isValidHttpUrl = (value) => {
   } catch {
     return false;
   }
+};
+
+const normalizeDurationMinutes = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.max(1, Math.ceil(seconds / 60));
 };
 
 const Dropzone = ({ accept, onFileChange, icon, title, subtitle }) => {
@@ -104,6 +111,10 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
   const [newAttachmentLabel, setNewAttachmentLabel] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
   const [newAttachmentFile, setNewAttachmentFile] = useState(null);
+  const [durationState, setDurationState] = useState({ status: 'idle', url: '' });
+  const lastDetectedUrlRef = useRef('');
+  const playerRef = useRef(null);
+  const durationPollRef = useRef(null);
 
   const [form, setForm] = useState({
     title: '',
@@ -120,6 +131,7 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
 
   useEffect(() => {
     if (!open) return;
+
     const timer = setTimeout(() => {
       setActiveTab('content');
       setAttachmentMode('upload');
@@ -127,21 +139,102 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
       setNewAttachmentUrl('');
       setNewAttachmentFile(null);
       setSearchUser('');
+      setDurationState({ status: 'idle', url: lesson?.videoUrl || '' });
+      lastDetectedUrlRef.current = '';
+
+      if (durationPollRef.current) {
+        clearInterval(durationPollRef.current);
+        durationPollRef.current = null;
+      }
+
       setForm({
         title: lesson?.title || '',
-        type: lesson?.type || 'video',
-        responsibleUserId: lesson?.responsibleUserId || '',
+        type: lesson?.type || lesson?.lessonType || 'video',
+        responsibleUserId: lesson?.responsibleUserId || lesson?.responsibleId || '',
         videoUrl: lesson?.videoUrl || '',
-        durationMinutes: lesson?.durationMinutes ?? '',
+        durationMinutes: lesson?.durationMinutes ?? lesson?.durationMins ?? '',
         description: lesson?.description || '',
         allowDownload: lesson?.allowDownload ?? true,
-        quizId: lesson?.quizId || '',
+        quizId: lesson?.quizId || lesson?.quiz?.id || '',
         contentFile: null,
         imageFile: null,
       });
     }, 0);
+
     return () => clearTimeout(timer);
   }, [lesson, open]);
+
+  useEffect(() => () => {
+    if (durationPollRef.current) {
+      clearInterval(durationPollRef.current);
+      durationPollRef.current = null;
+    }
+  }, []);
+
+  const applyDetectedDuration = useCallback((sourceUrl, seconds) => {
+    const minutes = normalizeDurationMinutes(seconds);
+
+    if (!minutes || !sourceUrl) {
+      setDurationState((prev) => ({
+        status: prev.url === sourceUrl ? 'error' : prev.status,
+        url: prev.url === sourceUrl ? sourceUrl : prev.url,
+      }));
+      return false;
+    }
+
+    lastDetectedUrlRef.current = sourceUrl;
+    setForm((prev) => {
+      if (prev.videoUrl !== sourceUrl) return prev;
+      return { ...prev, durationMinutes: String(minutes) };
+    });
+    setDurationState((prev) => ({
+      status: prev.url === sourceUrl ? 'detected' : prev.status,
+      url: prev.url === sourceUrl ? sourceUrl : prev.url,
+    }));
+    return true;
+  }, []);
+
+  const startDurationDetection = useCallback((sourceUrl) => {
+    if (!sourceUrl || !ReactPlayer.canPlay(sourceUrl)) {
+      if (durationPollRef.current) {
+        clearInterval(durationPollRef.current);
+        durationPollRef.current = null;
+      }
+      setDurationState({
+        status: sourceUrl ? 'error' : 'idle',
+        url: sourceUrl || '',
+      });
+      return;
+    }
+
+    if (durationPollRef.current) {
+      clearInterval(durationPollRef.current);
+      durationPollRef.current = null;
+    }
+
+    setDurationState({ status: 'detecting', url: sourceUrl });
+
+    let attempts = 0;
+    durationPollRef.current = setInterval(() => {
+      attempts += 1;
+      const duration = playerRef.current?.getDuration?.();
+
+      if (applyDetectedDuration(sourceUrl, duration)) {
+        clearInterval(durationPollRef.current);
+        durationPollRef.current = null;
+        return;
+      }
+
+      if (attempts >= 20) {
+        clearInterval(durationPollRef.current);
+        durationPollRef.current = null;
+        setDurationState((prev) => ({
+          status: prev.url === sourceUrl ? 'error' : prev.status,
+          url: prev.url === sourceUrl ? sourceUrl : prev.url,
+        }));
+      }
+    }, 400);
+  }, [applyDetectedDuration]);
 
   const { data: users = [] } = useQuery({
     queryKey: ['lesson-users'],
@@ -176,14 +269,75 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
     return users.filter((u) => (u.name || '').toLowerCase().includes(searchUser.toLowerCase()));
   }, [users, searchUser]);
 
+  const handleTypeChange = (nextType) => {
+    setForm((prev) => ({
+      ...prev,
+      type: nextType,
+      videoUrl: nextType === 'video' ? prev.videoUrl : '',
+      durationMinutes: nextType === 'video' ? prev.durationMinutes : '',
+      quizId: nextType === 'quiz' ? prev.quizId : '',
+      contentFile: nextType === 'document' ? prev.contentFile : null,
+      imageFile: nextType === 'image' ? prev.imageFile : null,
+      allowDownload: ['document', 'image'].includes(nextType) ? prev.allowDownload : false,
+    }));
+
+    if (nextType !== 'video') {
+      if (durationPollRef.current) {
+        clearInterval(durationPollRef.current);
+        durationPollRef.current = null;
+      }
+      setDurationState({ status: 'idle', url: '' });
+      return;
+    }
+
+    const nextUrl = form.videoUrl.trim();
+    if (isValidHttpUrl(nextUrl) && ReactPlayer.canPlay(nextUrl)) {
+      startDurationDetection(nextUrl);
+    } else {
+      setDurationState({ status: 'idle', url: nextUrl });
+    }
+  };
+
+  const validateBeforeSave = () => {
+    if (!form.title.trim()) {
+      toast.error('Lesson title is required');
+      return false;
+    }
+
+    if (form.type === 'video') {
+      if (!isValidHttpUrl(form.videoUrl)) {
+        toast.error('Enter a valid video URL');
+        return false;
+      }
+    }
+
+    if (form.type === 'document' && !lesson?.fileUrl && !lesson?.contentFile && !form.contentFile) {
+      toast.error('Upload a document file before saving');
+      return false;
+    }
+
+    if (form.type === 'image' && !lesson?.fileUrl && !form.imageFile) {
+      toast.error('Upload an image before saving');
+      return false;
+    }
+
+    if (form.type === 'quiz' && !form.quizId) {
+      toast.error('Select a quiz before saving');
+      return false;
+    }
+
+    return true;
+  };
+
   const saveLessonMutation = useMutation({
     mutationFn: async () => {
       const payload = {
-        title: form.title,
+        title: form.title.trim(),
         type: form.type,
         responsibleUserId: form.responsibleUserId || null,
-        videoUrl: form.type === 'video' ? form.videoUrl || null : null,
-        durationMinutes: form.type === 'video' && form.durationMinutes !== '' ? Number(form.durationMinutes) : null,
+        videoUrl: form.type === 'video' ? form.videoUrl.trim() || null : null,
+        durationMinutes:
+          form.type === 'video' && form.durationMinutes !== '' ? Number(form.durationMinutes) : null,
         description: form.description || '',
         allowDownload: ['document', 'image'].includes(form.type) ? !!form.allowDownload : false,
         quizId: form.type === 'quiz' ? form.quizId || null : null,
@@ -196,7 +350,8 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
         response = await axios.post(`/courses/${courseId}/lessons`, payload);
       }
 
-      const savedLessonId = response?.data?.data?.lesson?.id || response?.data?.lesson?.id || response?.data?.id || lesson?.id;
+      const savedLessonId =
+        response?.data?.data?.lesson?.id || response?.data?.lesson?.id || response?.data?.id || lesson?.id;
 
       if (form.type === 'document' && form.contentFile && savedLessonId) {
         const fd = new FormData();
@@ -216,11 +371,11 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-lessons', courseId] });
-      toast.success('Lesson saved ✓');
+      toast.success('Lesson saved');
       onOpenChange(false);
       if (onSaved) onSaved();
     },
-    onError: () => toast.error('Failed to save lesson'),
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to save lesson')),
   });
 
   const addAttachmentMutation = useMutation({
@@ -263,15 +418,15 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
     onError: () => toast.error('Failed to delete attachment'),
   });
 
-  const canPreviewVideo = form.type === 'video' && isValidHttpUrl(form.videoUrl);
-
+  const trimmedVideoUrl = form.videoUrl.trim();
+  const canPreviewVideo = form.type === 'video' && isValidHttpUrl(trimmedVideoUrl) && ReactPlayer.canPlay(trimmedVideoUrl);
   const lessonAttachments = lesson?.attachments || [];
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-        <Dialog.Content className="fixed inset-x-0 bottom-0 top-0 md:top-1/2 md:bottom-auto md:left-1/2 md:right-auto md:w-full md:max-w-2xl md:-translate-x-1/2 md:-translate-y-1/2 bg-white z-50 md:rounded-xl flex flex-col focus:outline-none">
+        <Dialog.Content className="fixed inset-x-0 bottom-0 top-0 md:inset-auto md:left-1/2 md:top-1/2 md:w-[min(100%-2rem,48rem)] md:max-h-[90vh] md:-translate-x-1/2 md:-translate-y-1/2 bg-white z-50 md:rounded-xl flex min-h-0 max-h-[100dvh] flex-col overflow-hidden focus:outline-none">
           <div className="flex items-center justify-between border-b px-4 py-3 md:px-6">
             <Dialog.Title className="text-lg font-semibold text-gray-900">
               {lesson?.id ? 'Edit Lesson' : 'Add Lesson'}
@@ -300,7 +455,7 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-5">
             {activeTab === 'content' && (
               <>
                 <div>
@@ -325,7 +480,7 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                         <button
                           key={type.value}
                           type="button"
-                          onClick={() => setForm((prev) => ({ ...prev, type: type.value }))}
+                          onClick={() => handleTypeChange(type.value)}
                           className={`rounded-xl border p-3 text-left transition-colors ${
                             selected
                               ? 'border-2 border-[#2D31D4] bg-[#EEF0FF]'
@@ -367,14 +522,62 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                       <input
                         type="url"
                         value={form.videoUrl}
-                        onChange={(e) => setForm((prev) => ({ ...prev, videoUrl: e.target.value }))}
+                        onChange={(e) => {
+                          const nextUrl = e.target.value;
+                          const normalizedUrl = nextUrl.trim();
+
+                          lastDetectedUrlRef.current = '';
+
+                          if (durationPollRef.current) {
+                            clearInterval(durationPollRef.current);
+                            durationPollRef.current = null;
+                          }
+
+                          setForm((prev) => ({ ...prev, videoUrl: nextUrl }));
+
+                          if (!normalizedUrl) {
+                            setDurationState({ status: 'idle', url: '' });
+                            return;
+                          }
+
+                          if (!isValidHttpUrl(normalizedUrl) || !ReactPlayer.canPlay(normalizedUrl)) {
+                            setDurationState({ status: 'error', url: normalizedUrl });
+                            return;
+                          }
+
+                          startDurationDetection(normalizedUrl);
+                        }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-[#2D31D4]"
-                        placeholder="https://..."
+                        placeholder="Paste YouTube, Vimeo, or direct video URL"
                       />
+                      <div className="mt-2 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                        <Clock3 className="w-3.5 h-3.5" />
+                        {durationState.status === 'detecting' ? 'Detecting duration from video link...' : null}
+                        {durationState.status === 'detected' ? 'Duration detected automatically.' : null}
+                        {durationState.status === 'error' ? 'This link could not be read automatically. Use a supported playable URL or enter duration manually.' : null}
+                        {durationState.status === 'idle' ? 'Paste a playable video URL to auto-fill duration.' : null}
+                      </div>
                     </div>
                     {canPreviewVideo ? (
-                      <div className="overflow-hidden rounded-xl border border-gray-200 aspect-video">
-                        <ReactPlayer url={form.videoUrl} controls width="100%" height="100%" />
+                      <div className="overflow-hidden rounded-xl border border-gray-200 aspect-video bg-black">
+                        <ReactPlayer
+                          ref={playerRef}
+                          url={trimmedVideoUrl}
+                          controls
+                          width="100%"
+                          height="100%"
+                          onReady={() => startDurationDetection(trimmedVideoUrl)}
+                          onDuration={(seconds) => {
+                            applyDetectedDuration(trimmedVideoUrl, seconds);
+                          }}
+                          onError={() => {
+                            if (durationPollRef.current) {
+                              clearInterval(durationPollRef.current);
+                              durationPollRef.current = null;
+                            }
+                            setDurationState({ status: 'error', url: trimmedVideoUrl });
+                          }}
+                        />
                       </div>
                     ) : null}
                     <div>
@@ -408,6 +611,10 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                         </div>
                         <CheckCircle2 className="w-5 h-5 text-green-600" />
                       </div>
+                    ) : lesson?.fileUrl ? (
+                      <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                        Existing file attached. Upload a new file only if you want to replace it.
+                      </div>
                     ) : null}
                     <label className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
                       <span className="text-sm text-gray-700">Allow learners to download this file</span>
@@ -436,6 +643,10 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                           alt="Preview"
                           className="max-h-48 rounded-lg object-contain mx-auto"
                         />
+                      </div>
+                    ) : lesson?.fileUrl ? (
+                      <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                        Existing image attached. Upload a new image only if you want to replace it.
                       </div>
                     ) : null}
                     <label className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
@@ -496,7 +707,7 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                           <Paperclip className="w-4 h-4 text-gray-500" />
                           <span className="text-sm font-medium text-gray-800">{attachment.label || attachment.name}</span>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                            {attachment.type || (attachment.url ? 'Link' : 'File')}
+                            {attachment.attachmentType || attachment.type || (attachment.url ? 'Link' : 'File')}
                           </span>
                         </div>
                         <button
@@ -598,7 +809,10 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
             </button>
             <button
               type="button"
-              onClick={() => saveLessonMutation.mutate()}
+              onClick={() => {
+                if (!validateBeforeSave()) return;
+                saveLessonMutation.mutate();
+              }}
               disabled={saveLessonMutation.isPending || !form.title.trim()}
               className="px-4 py-2 text-sm font-medium text-white bg-[#2D31D4] hover:bg-blue-800 rounded-lg disabled:opacity-70 inline-flex items-center gap-2"
             >
@@ -613,3 +827,4 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
 };
 
 export default LessonEditorModal;
+

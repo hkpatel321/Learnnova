@@ -1,8 +1,29 @@
 const prisma = require('../config/db');
 
-// ── helpers ──────────────────────────────────────────────────────
+const normalizeOptionalString = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
 
-/** Verify the course exists and optionally that the user owns it */
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
+};
+
+const parseOptionalInt = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const mapLessonForClient = (lesson) => ({
+  ...lesson,
+  type: lesson.lessonType,
+  durationMinutes: lesson.durationMins ?? 0,
+  responsibleUserId: lesson.responsibleId || '',
+  quizId: lesson.quizId ?? lesson.quiz?.id ?? null,
+});
+
 const verifyCourseAccess = async (courseId, user) => {
   const course = await prisma.course.findUnique({ where: { id: courseId } });
 
@@ -15,11 +36,10 @@ const verifyCourseAccess = async (courseId, user) => {
   return { course };
 };
 
-/** Verify a lesson exists and that the user has access via the parent course */
 const verifyLessonAccess = async (lessonId, user) => {
   const lesson = await prisma.lesson.findUnique({
     where: { id: lessonId },
-    include: { course: true },
+    include: { course: true, quiz: { select: { id: true } } },
   });
 
   if (!lesson) return { error: 'Lesson not found', status: 404 };
@@ -30,8 +50,6 @@ const verifyLessonAccess = async (lessonId, user) => {
 
   return { lesson };
 };
-
-// ── 1. getLessonsByCourse ────────────────────────────────────────
 
 const getLessonsByCourse = async (req, res, next) => {
   try {
@@ -45,14 +63,19 @@ const getLessonsByCourse = async (req, res, next) => {
     const lessons = await prisma.lesson.findMany({
       where: { courseId },
       include: {
+        quiz: { select: { id: true } },
+        attachments: { orderBy: { sortOrder: 'asc' } },
         _count: { select: { attachments: true } },
       },
       orderBy: { sortOrder: 'asc' },
     });
 
-    const data = lessons.map((l) => {
-      const { _count, ...rest } = l;
-      return { ...rest, attachmentCount: _count.attachments };
+    const data = lessons.map((lesson) => {
+      const { _count, ...rest } = lesson;
+      return {
+        ...mapLessonForClient(rest),
+        attachmentCount: _count.attachments,
+      };
     });
 
     return res.json({ success: true, data: { lessons: data } });
@@ -60,8 +83,6 @@ const getLessonsByCourse = async (req, res, next) => {
     next(err);
   }
 };
-
-// ── 2. createLesson ──────────────────────────────────────────────
 
 const createLesson = async (req, res, next) => {
   try {
@@ -72,17 +93,27 @@ const createLesson = async (req, res, next) => {
       return res.status(access.status).json({ success: false, message: access.error });
     }
 
-    const {
-      title,
-      lessonType,
-      description,
-      videoUrl,
-      durationMins,
-      allowDownload,
-      responsibleId,
-    } = req.body;
+    const lessonType = req.body.lessonType || req.body.type || 'video';
+    const title = String(req.body.title || '').trim();
+    const description = normalizeOptionalString(req.body.description);
+    const videoUrl = normalizeOptionalString(req.body.videoUrl);
+    const durationMins = parseOptionalInt(req.body.durationMins ?? req.body.durationMinutes);
+    const allowDownload = req.body.allowDownload === true || req.body.allowDownload === 'true';
+    const responsibleId = normalizeOptionalString(req.body.responsibleId ?? req.body.responsibleUserId);
+    const quizId = normalizeOptionalString(req.body.quizId);
 
-    // Auto sort_order
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'Lesson title is required' });
+    }
+
+    if (lessonType === 'video' && !videoUrl) {
+      return res.status(400).json({ success: false, message: 'Video URL is required for video lessons' });
+    }
+
+    if (lessonType === 'quiz' && !quizId) {
+      return res.status(400).json({ success: false, message: 'Quiz selection is required for quiz lessons' });
+    }
+
     const maxSort = await prisma.lesson.aggregate({
       where: { courseId },
       _max: { sortOrder: true },
@@ -93,23 +124,33 @@ const createLesson = async (req, res, next) => {
       data: {
         courseId,
         title,
-        lessonType: lessonType || req.body.type || 'video',
-        description: description || null,
-        videoUrl: videoUrl || null,
-        durationMins: durationMins ? parseInt(durationMins, 10) : (req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null),
-        allowDownload: allowDownload || false,
-        responsibleId: responsibleId || null,
+        lessonType,
+        description,
+        videoUrl: lessonType === 'video' ? videoUrl : null,
+        durationMins: lessonType === 'video' ? durationMins : null,
+        fileUrl: null,
+        allowDownload: ['document', 'image'].includes(lessonType) ? allowDownload : false,
+        responsibleId,
         sortOrder,
+      },
+      include: {
+        quiz: { select: { id: true } },
+        attachments: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
-    return res.status(201).json({ success: true, data: { lesson } });
+    if (lessonType === 'quiz' && quizId) {
+      await prisma.quiz.update({
+        where: { id: quizId },
+        data: { lessonId: lesson.id },
+      });
+    }
+
+    return res.status(201).json({ success: true, data: { lesson: mapLessonForClient(lesson) } });
   } catch (err) {
     next(err);
   }
 };
-
-// ── 3. updateLesson ──────────────────────────────────────────────
 
 const updateLesson = async (req, res, next) => {
   try {
@@ -118,56 +159,96 @@ const updateLesson = async (req, res, next) => {
       return res.status(access.status).json({ success: false, message: access.error });
     }
 
-    const allowedFields = [
-      'title',
-      'lessonType',
-      'description',
-      'videoUrl',
-      'durationMins',
-      'allowDownload',
-      'responsibleId',
-      'sortOrder',
-    ];
-
+    const currentLesson = access.lesson;
+    const nextLessonType = req.body.lessonType || req.body.type || currentLesson.lessonType;
+    const nextQuizId = normalizeOptionalString(req.body.quizId);
     const data = {};
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        data[field] = req.body[field];
+
+    if (req.body.title !== undefined) data.title = String(req.body.title).trim();
+    if (req.body.description !== undefined) data.description = normalizeOptionalString(req.body.description);
+    if (req.body.videoUrl !== undefined) data.videoUrl = normalizeOptionalString(req.body.videoUrl);
+    if (req.body.durationMins !== undefined || req.body.durationMinutes !== undefined) {
+      data.durationMins = parseOptionalInt(req.body.durationMins ?? req.body.durationMinutes);
+    }
+    if (req.body.allowDownload !== undefined) {
+      data.allowDownload = req.body.allowDownload === true || req.body.allowDownload === 'true';
+    }
+    if (req.body.responsibleId !== undefined || req.body.responsibleUserId !== undefined) {
+      data.responsibleId = normalizeOptionalString(req.body.responsibleId ?? req.body.responsibleUserId);
+    }
+    if (req.body.sortOrder !== undefined) {
+      data.sortOrder = parseOptionalInt(req.body.sortOrder);
+    }
+    if (req.body.lessonType !== undefined || req.body.type !== undefined) {
+      data.lessonType = nextLessonType;
+    }
+
+    if (data.title !== undefined && !data.title) {
+      return res.status(400).json({ success: false, message: 'Lesson title is required' });
+    }
+
+    if (nextLessonType === 'video') {
+      const effectiveVideoUrl = data.videoUrl !== undefined ? data.videoUrl : currentLesson.videoUrl;
+      if (!effectiveVideoUrl) {
+        return res.status(400).json({ success: false, message: 'Video URL is required for video lessons' });
       }
     }
 
-    // Parse numeric fields
-    if (data.durationMins !== undefined) {
-      data.durationMins = data.durationMins ? parseInt(data.durationMins, 10) : null;
-    } else if (req.body.durationMinutes !== undefined) {
-      data.durationMins = req.body.durationMinutes ? parseInt(req.body.durationMinutes, 10) : null;
-    }
-    
-    if (req.body.type) {
-      data.lessonType = req.body.type;
-    }
-    
-    if (data.sortOrder !== undefined) {
-      data.sortOrder = parseInt(data.sortOrder, 10);
+    if (nextLessonType === 'quiz') {
+      const effectiveQuizId = req.body.quizId !== undefined ? nextQuizId : currentLesson.quiz?.id;
+      if (!effectiveQuizId) {
+        return res.status(400).json({ success: false, message: 'Quiz selection is required for quiz lessons' });
+      }
     }
 
-    // Handle file upload (document / image lesson types)
     if (req.file) {
       data.fileUrl = `/uploads/${req.file.filename}`;
+    }
+
+    if (nextLessonType !== 'video') {
+      data.videoUrl = null;
+      data.durationMins = null;
+    }
+
+    if (!['document', 'image'].includes(nextLessonType)) {
+      data.allowDownload = false;
+      if (!req.file) {
+        data.fileUrl = null;
+      }
+    }
+
+    if (nextLessonType === 'quiz') {
+      data.fileUrl = null;
     }
 
     const updated = await prisma.lesson.update({
       where: { id: req.params.id },
       data,
+      include: {
+        quiz: { select: { id: true } },
+        attachments: { orderBy: { sortOrder: 'asc' } },
+      },
     });
 
-    return res.json({ success: true, data: { lesson: updated } });
+    if (req.body.quizId !== undefined && currentLesson.quiz?.id && currentLesson.quiz.id !== nextQuizId) {
+      await prisma.quiz.update({
+        where: { id: currentLesson.quiz.id },
+        data: { lessonId: null },
+      });
+    }
+
+    if (nextLessonType === 'quiz' && nextQuizId) {
+      await prisma.quiz.update({
+        where: { id: nextQuizId },
+        data: { lessonId: updated.id },
+      });
+    }
+
+    return res.json({ success: true, data: { lesson: mapLessonForClient(updated) } });
   } catch (err) {
     next(err);
   }
 };
-
-// ── 3b. uploadLessonFile ────────────────────────────────────────
 
 const uploadLessonFile = async (req, res, next) => {
   try {
@@ -185,16 +266,20 @@ const uploadLessonFile = async (req, res, next) => {
       data: {
         fileUrl: `/uploads/${req.file.filename}`,
         lessonType: 'document',
+        videoUrl: null,
+        durationMins: null,
+      },
+      include: {
+        quiz: { select: { id: true } },
+        attachments: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
-    return res.status(201).json({ success: true, data: { lesson: updated } });
+    return res.status(201).json({ success: true, data: { lesson: mapLessonForClient(updated) } });
   } catch (err) {
     next(err);
   }
 };
-
-// ── 3c. uploadLessonImage ───────────────────────────────────────
 
 const uploadLessonImage = async (req, res, next) => {
   try {
@@ -212,16 +297,20 @@ const uploadLessonImage = async (req, res, next) => {
       data: {
         fileUrl: `/uploads/${req.file.filename}`,
         lessonType: 'image',
+        videoUrl: null,
+        durationMins: null,
+      },
+      include: {
+        quiz: { select: { id: true } },
+        attachments: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
-    return res.status(201).json({ success: true, data: { lesson: updated } });
+    return res.status(201).json({ success: true, data: { lesson: mapLessonForClient(updated) } });
   } catch (err) {
     next(err);
   }
 };
-
-// ── 4. deleteLesson ──────────────────────────────────────────────
 
 const deleteLesson = async (req, res, next) => {
   try {
@@ -245,8 +334,6 @@ const deleteLesson = async (req, res, next) => {
   }
 };
 
-// ── 5. reorderLessons ────────────────────────────────────────────
-
 const reorderLessons = async (req, res, next) => {
   try {
     const { courseId } = req.params;
@@ -265,7 +352,6 @@ const reorderLessons = async (req, res, next) => {
       });
     }
 
-    // Transaction: update each lesson's sort_order
     await prisma.$transaction(
       lessonIds.map((id, index) =>
         prisma.lesson.update({
@@ -281,8 +367,6 @@ const reorderLessons = async (req, res, next) => {
   }
 };
 
-// ── 6. addAttachment ─────────────────────────────────────────────
-
 const addAttachment = async (req, res, next) => {
   try {
     const access = await verifyLessonAccess(req.params.id, req.user);
@@ -293,7 +377,6 @@ const addAttachment = async (req, res, next) => {
     const { attachmentType, label } = req.body;
     let { url } = req.body;
 
-    // If a file was uploaded, use its path instead
     if (req.file) {
       url = `/uploads/${req.file.filename}`;
     }
@@ -305,7 +388,6 @@ const addAttachment = async (req, res, next) => {
       });
     }
 
-    // Auto sort_order for attachments
     const maxSort = await prisma.lessonAttachment.aggregate({
       where: { lessonId: req.params.id },
       _max: { sortOrder: true },
@@ -328,8 +410,6 @@ const addAttachment = async (req, res, next) => {
   }
 };
 
-// ── 7. deleteAttachment ──────────────────────────────────────────
-
 const deleteAttachment = async (req, res, next) => {
   try {
     const attachment = await prisma.lessonAttachment.findUnique({
@@ -351,13 +431,12 @@ const deleteAttachment = async (req, res, next) => {
   }
 };
 
-// ── 8. getLessonById ─────────────────────────────────────────────
-
 const getLessonById = async (req, res, next) => {
   try {
     const lesson = await prisma.lesson.findUnique({
       where: { id: req.params.id },
       include: {
+        quiz: { select: { id: true } },
         attachments: { orderBy: { sortOrder: 'asc' } },
       },
     });
@@ -369,7 +448,7 @@ const getLessonById = async (req, res, next) => {
       });
     }
 
-    return res.json({ success: true, data: { lesson } });
+    return res.json({ success: true, data: { lesson: mapLessonForClient(lesson) } });
   } catch (err) {
     next(err);
   }
