@@ -4,15 +4,6 @@
 
 Production-ready full-stack eLearning platform with role-based access, course authoring, learner progress, quizzes, invitations, reviews, reporting, password reset, uploads, and Stripe-powered paid enrollments.
 
-<p>
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-feature-tour">Feature Tour</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-environment-setup">Environment Setup</a> •
-  <a href="#-production-deployment">Deployment</a> •
-  <a href="#-troubleshooting">Troubleshooting</a>
-</p>
-
 </div>
 
 ---
@@ -40,29 +31,6 @@ This README is designed for fast navigation and progressive disclosure:
 | Storage | PostgreSQL + local upload directory |
 | Roles | `admin`, `instructor`, `learner` |
 | Apps | `frontend/` and `backend/` |
-
----
-
-## Clickable Index
-
-- [Quick Start](#-quick-start)
-- [Feature Tour](#-feature-tour)
-- [Repository Map](#-repository-map)
-- [Architecture](#-architecture)
-- [Environment Setup](#-environment-setup)
-- [Local Development](#-local-development)
-- [Database and Seed Data](#-database-and-seed-data)
-- [Authentication and Authorization](#-authentication-and-authorization)
-- [Payments](#-payments)
-- [Email Delivery](#-email-delivery)
-- [Uploads and Static Assets](#-uploads-and-static-assets)
-- [API Overview](#-api-overview)
-- [Production Deployment](#-production-deployment)
-- [Operational Notes](#-operational-notes)
-- [Troubleshooting](#-troubleshooting)
-- [Production Hardening Roadmap](#-production-hardening-roadmap)
-
----
 
 ## Quick Start
 
@@ -838,3 +806,9 @@ This README was written against the current repository structure and actual impl
 - screenshots or GIF walkthroughs
 - API examples with expandable request/response samples
 - a badge block for health, build, license, and deployment state
+
+## Demo Video Link
+
+<p>
+  <a href="https://drive.google.com/drive/folders/1zaFijEZgYyxCVmsag9IR9gy34OGPj6Yc">Learnnova</a>
+</p>
