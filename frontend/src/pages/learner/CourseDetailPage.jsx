@@ -150,10 +150,6 @@ export default function CourseDetailPage() {
   const handledStripeSessionIdRef = useRef(null);
   const stripeStatus = searchParams.get('stripe_status');
   const stripeSessionId = searchParams.get('session_id');
-  const optimisticPaymentUnlocked =
-    optimisticPaymentState?.courseId === courseId &&
-    optimisticPaymentState?.authScope === authScope &&
-    optimisticPaymentState?.unlocked === true;
 
   const { data: course, isLoading: courseLoading } = useQuery({
     queryKey: ['course-detail', courseId, authScope],
@@ -170,6 +166,10 @@ export default function CourseDetailPage() {
 
   const canonicalCourseId = course?.id || null;
   const canonicalCoursePath = course ? getCoursePath(course) : `/courses/${courseId}`;
+  const optimisticPaymentUnlocked =
+    optimisticPaymentState?.courseId === canonicalCourseId &&
+    optimisticPaymentState?.authScope === authScope &&
+    optimisticPaymentState?.unlocked === true;
 
   const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
     queryKey: ['course-reviews', canonicalCourseId],
@@ -186,7 +186,7 @@ export default function CourseDetailPage() {
       const res = await axios.get(`/progress/courses/${canonicalCourseId}`);
       return res.data?.data || res.data;
     },
-    enabled: isAuthenticated && isLearner && !!canonicalCourseId,
+    enabled: isAuthenticated && isLearner && !!canonicalCourseId && !!course?.canAccessCourse,
     retry: false,
   });
 
@@ -240,7 +240,7 @@ export default function CourseDetailPage() {
       return res.data?.data || res.data;
     },
     onSuccess: async () => {
-      setOptimisticPaymentState({ courseId, authScope, unlocked: true });
+      setOptimisticPaymentState({ courseId: canonicalCourseId, authScope, unlocked: true });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['course-progress', canonicalCourseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
@@ -274,6 +274,7 @@ export default function CourseDetailPage() {
     if (
       stripeStatus !== 'success' ||
       !stripeSessionId ||
+      !canonicalCourseId ||
       handledStripeSessionIdRef.current === stripeSessionId ||
       !isLearner ||
       !isAuthenticated
@@ -295,6 +296,7 @@ export default function CourseDetailPage() {
     courseId,
     isAuthenticated,
     isLearner,
+    canonicalCourseId,
     navigate,
     stripeSessionId,
     stripeStatus,
@@ -436,7 +438,7 @@ export default function CourseDetailPage() {
       const orderData = await createPaymentOrderMutation.mutateAsync();
 
       if (orderData?.alreadyPaid) {
-        setOptimisticPaymentState({ courseId, authScope, unlocked: true });
+        setOptimisticPaymentState({ courseId: canonicalCourseId, authScope, unlocked: true });
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['course-progress', canonicalCourseId, authScope] }),
           queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
