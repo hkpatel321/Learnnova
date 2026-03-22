@@ -17,6 +17,17 @@ router.post(
   progressController.completeLesson
 );
 
+router.post(
+  '/progress/lessons/:lessonId/time-spent',
+  rejectUnknownBodyFields(['minutesSpent']),
+  [
+    param('lessonId').isUUID().withMessage('Valid lesson id is required'),
+    body('minutesSpent').isInt({ min: 1, max: 240 }).withMessage('minutesSpent must be between 1 and 240'),
+  ],
+  validate,
+  progressController.addLessonTimeSpent
+);
+
 router.get(
   '/progress/courses/:courseId',
   [param('courseId').isUUID().withMessage('Valid course id is required')],

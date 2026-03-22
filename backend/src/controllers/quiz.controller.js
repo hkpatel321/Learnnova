@@ -78,10 +78,10 @@ const createQuiz = async (req, res, next) => {
         courseId,
         title,
         lessonId: lessonId || null,
-        pointsAttempt1: pointsAttempt1 ?? 10,
-        pointsAttempt2: pointsAttempt2 ?? 7,
-        pointsAttempt3: pointsAttempt3 ?? 4,
-        pointsAttempt4plus: pointsAttempt4plus ?? 2,
+        pointsAttempt1: pointsAttempt1 ?? 4,
+        pointsAttempt2: pointsAttempt2 ?? 3,
+        pointsAttempt3: pointsAttempt3 ?? 2,
+        pointsAttempt4plus: pointsAttempt4plus ?? 1,
       },
     });
 

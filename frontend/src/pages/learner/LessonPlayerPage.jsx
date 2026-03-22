@@ -22,6 +22,52 @@ const typeLabel = {
   quiz: 'Quiz',
 };
 
+const getYouTubeVideoId = (url) => {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      return parsed.pathname.split('/').filter(Boolean)[0] || null;
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (parsed.pathname === '/watch') {
+        return parsed.searchParams.get('v');
+      }
+
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      if (['embed', 'shorts', 'live'].includes(pathParts[0])) {
+        return pathParts[1] || null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const getPlayableVideoSource = (url) => {
+  const youtubeId = getYouTubeVideoId(url);
+
+  if (youtubeId) {
+    return {
+      type: 'youtube',
+      videoId: youtubeId,
+      src: `https://www.youtube-nocookie.com/embed/${youtubeId}?rel=0&modestbranding=1&playsinline=1`,
+      watchUrl: `https://www.youtube.com/watch?v=${youtubeId}`,
+    };
+  }
+
+  return {
+    type: 'direct',
+    src: url,
+  };
+};
+
 const LessonStatusIcon = ({ status, current }) => {
   if (status === 'completed') {
     return (
@@ -47,7 +93,10 @@ export default function LessonPlayerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [playingVideoLessonId, setPlayingVideoLessonId] = useState(null);
   const trackedActivityRef = useRef({});
+  const trackedSecondsRef = useRef(0);
+  const reportedMinutesRef = useRef(0);
 
   const [confettiPieces, setConfettiPieces] = useState([]);
 
@@ -110,6 +159,14 @@ export default function LessonPlayerPage() {
     mutationFn: async (payload) => axios.post('/users/me/activity-events', payload),
   });
 
+  const addTimeSpentMutation = useMutation({
+    mutationFn: async ({ targetLessonId, minutesSpent }) =>
+      axios.post(`/progress/lessons/${targetLessonId}/time-spent`, { minutesSpent }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['course-progress', courseId] });
+    },
+  });
+
   const lessons = useMemo(() => {
     const fromProgress =
       progress?.lessons ||
@@ -160,6 +217,8 @@ export default function LessonPlayerPage() {
 
   useEffect(() => {
     trackedActivityRef.current = {};
+    trackedSecondsRef.current = 0;
+    reportedMinutesRef.current = 0;
   }, [lessonId]);
 
   useEffect(() => {
@@ -179,6 +238,35 @@ export default function LessonPlayerPage() {
       });
     }
   }, [contentType, currentLesson, lessonId, recordActivity]);
+
+  useEffect(() => {
+    if (!lessonId) return undefined;
+
+    const tick = window.setInterval(() => {
+      const isVisible = typeof document === 'undefined' ? true : document.visibilityState === 'visible';
+      const shouldTrack =
+        isVisible &&
+        (contentType === 'video'
+          ? playingVideoLessonId === lessonId
+          : ['document', 'image', 'quiz'].includes(contentType));
+
+      if (!shouldTrack) return;
+
+      trackedSecondsRef.current += 15;
+      const wholeMinutes = Math.floor(trackedSecondsRef.current / 60);
+      const pendingMinutes = wholeMinutes - reportedMinutesRef.current;
+
+      if (pendingMinutes > 0 && !addTimeSpentMutation.isPending) {
+        reportedMinutesRef.current += pendingMinutes;
+        addTimeSpentMutation.mutate({
+          targetLessonId: lessonId,
+          minutesSpent: pendingMinutes,
+        });
+      }
+    }, 15000);
+
+    return () => window.clearInterval(tick);
+  }, [addTimeSpentMutation, contentType, lessonId, playingVideoLessonId]);
 
   const handleNavigateLesson = (targetId) => {
     navigate(`/learn/${courseId}/${targetId}`);
@@ -234,6 +322,7 @@ export default function LessonPlayerPage() {
     );
   }
   const attachments = currentLesson?.attachments || [];
+  const videoSource = getPlayableVideoSource(currentLesson?.video_url || currentLesson?.videoUrl);
 
   return (
     <div className="h-screen overflow-hidden bg-[#F4F5FF] relative">
@@ -372,19 +461,61 @@ export default function LessonPlayerPage() {
 
             <div>
               {contentType === 'video' ? (
-                <div className="aspect-video rounded-xl overflow-hidden bg-black">
-                  <ReactPlayer
-                    src={currentLesson?.video_url || currentLesson?.videoUrl}
-                    width="100%"
-                    height="100%"
-                    controls
-                    onPlay={() => {
-                      recordActivity('video_watch', {
-                        once: true,
-                        scope: 'play',
-                      });
-                    }}
-                  />
+                <div className="space-y-3">
+                  <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                    {videoSource.type === 'youtube' ? (
+                      <iframe
+                        src={videoSource.src}
+                        title={currentLesson?.title || 'Lesson video'}
+                        className="block h-full w-full border-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allowFullScreen
+                        onLoad={() => {
+                          recordActivity('video_watch', {
+                            once: true,
+                            scope: 'youtube-ready',
+                          });
+                        }}
+                      />
+                    ) : (
+                      <ReactPlayer
+                        src={videoSource.src}
+                        width="100%"
+                        height="100%"
+                        controls
+                        playsInline
+                        onReady={() => {
+                          recordActivity('video_watch', {
+                            once: true,
+                            scope: 'ready',
+                          });
+                        }}
+                        onPlay={() => {
+                          setPlayingVideoLessonId(lessonId);
+                          recordActivity('video_watch', {
+                            once: true,
+                            scope: 'play',
+                          });
+                        }}
+                        onPause={() => setPlayingVideoLessonId(null)}
+                        onEnded={() => setPlayingVideoLessonId(null)}
+                      />
+                    )}
+                  </div>
+
+                  {videoSource.type === 'youtube' ? (
+                    <div className="flex justify-end">
+                      <a
+                        href={videoSource.watchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center rounded-lg border border-[#2D31D4] px-4 py-2 text-sm font-medium text-[#2D31D4]"
+                      >
+                        Open on YouTube
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

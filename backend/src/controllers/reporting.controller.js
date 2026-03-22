@@ -49,14 +49,19 @@ const getReportingData = async (req, res, next) => {
       const completionPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
       return {
-        enrollment_id: e.id,
-        user_name: e.user.name,
-        user_email: e.user.email,
-        course_title: e.course?.title || 'Unknown Course',
+        id: e.id,
+        enrollmentId: e.id,
+        courseId: e.course?.id || null,
+        participantId: e.user.id,
+        participantName: e.user.name,
+        participantEmail: e.user.email,
+        courseName: e.course?.title || 'Unknown Course',
         status: e.status,
-        enrolled_at: e.enrolledAt,
-        completion_pct: completionPct,
-        time_spent_mins: e.timeSpentMins,
+        enrolledDate: e.enrolledAt,
+        startDate: e.startedAt,
+        completedDate: e.completedAt,
+        completionPercent: completionPct,
+        timeSpentMinutes: e.timeSpentMins,
       };
     });
 

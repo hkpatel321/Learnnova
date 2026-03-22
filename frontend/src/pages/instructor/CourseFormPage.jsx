@@ -10,6 +10,7 @@ import debounce from 'lodash.debounce';
 import axios from '../../lib/axios';
 import { resolveMediaUrl } from '../../lib/media';
 import { getApiErrorMessage } from '../../lib/apiError';
+import useAuthStore from '../../store/authStore';
 
 import Modal from '../../components/ui/Modal';
 import LessonsTab from '../../components/course/LessonsTab';
@@ -20,6 +21,7 @@ const CourseFormPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
+  const { user } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState('content');
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'unsaved'
@@ -107,6 +109,7 @@ const CourseFormPage = () => {
 
   const { data: users = [] } = useQuery({
     queryKey: ['course-users'],
+    enabled: user?.role === 'admin',
     queryFn: async () => {
       try {
         const res = await axios.get('/users');
@@ -120,12 +123,26 @@ const CourseFormPage = () => {
 
   const coverImageSrc = resolveMediaUrl(course?.coverImage || course?.coverImageUrl);
 
+  const availableUsers = useMemo(() => {
+    if (user?.role === 'admin') return users;
+    if (!user) return [];
+    return [
+      {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      },
+    ];
+  }, [user, users]);
+
   // Auto-save mutation
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       const payload = {
         ...data,
-        responsibleId: data.responsibleUserId || null,
+        websiteUrl: data.websiteUrl?.trim() ? data.websiteUrl.trim() : null,
+        responsibleId: data.responsibleUserId?.trim() ? data.responsibleUserId.trim() : null,
+        price: data.accessRule === 'payment' && data.price !== '' && data.price !== null ? data.price : null,
       };
       delete payload.responsibleUserId;
       return axios.put(`/courses/${courseId}`, payload);
@@ -158,6 +175,12 @@ const CourseFormPage = () => {
     debouncedSave(updatedData);
   };
 
+  const preventEnterSubmit = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+    }
+  };
+
   // Tag Handling
   const handleAddTag = (e) => {
     if (e.key === 'Enter' && tagInput.trim()) {
@@ -182,15 +205,26 @@ const CourseFormPage = () => {
       queryClient.invalidateQueries({ queryKey: ['course', courseId] });
       toast.success(course?.published ? 'Course hidden from learners' : 'Your course is now live! 🚀');
     },
-    onError: () => toast.error('Failed to update status')
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to update status'))
   });
 
-  const handleTogglePublish = () => {
+  const handleTogglePublish = async () => {
     if (!course?.published && !formData.websiteUrl.trim()) {
       toast('Add a website URL first', { icon: '⚠️' });
       return;
     }
-    publishMutation.mutate(!course?.published);
+
+    const latestFormData = {
+      ...formData,
+      websiteUrl: formData.websiteUrl.trim(),
+    };
+
+    try {
+      await saveMutation.mutateAsync(latestFormData);
+      publishMutation.mutate(!course?.published);
+    } catch {
+      // saveMutation already surfaces the specific error message
+    }
   };
 
   // Image Upload
@@ -284,6 +318,7 @@ const CourseFormPage = () => {
             type="text"
             value={formData.title}
             onChange={(e) => handleChange('title', e.target.value)}
+            onKeyDown={preventEnterSubmit}
             className="min-w-0 flex-1 text-[18px] font-bold text-gray-900 border-none px-0 py-1 hover:bg-gray-50 focus:bg-white focus:ring-0 w-full max-w-lg rounded transition-colors bg-transparent outline-none"
             placeholder="Course Title"
           />
@@ -391,6 +426,7 @@ const CourseFormPage = () => {
               type="text"
               value={formData.title}
               onChange={(e) => handleChange('title', e.target.value)}
+              onKeyDown={preventEnterSubmit}
               className="w-full px-4 py-2.5 text-lg border border-gray-300 rounded-lg focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none"
               placeholder="e.g. Advanced Node.js"
             />
@@ -431,6 +467,7 @@ const CourseFormPage = () => {
                 type="text"
                 value={formData.websiteUrl}
                 onChange={(e) => handleChange('websiteUrl', e.target.value)}
+                onKeyDown={preventEnterSubmit}
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none"
                 placeholder="e.g. advanced-nodejs-masterclass"
               />
@@ -447,14 +484,18 @@ const CourseFormPage = () => {
               value={formData.responsibleUserId}
               onChange={(e) => handleChange('responsibleUserId', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none bg-white"
+              disabled={user?.role !== 'admin'}
             >
-              <option value="">Select an instructor...</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name || user.email || `User ${user.id}`}
+              <option value="">{user?.role === 'admin' ? 'Select an instructor...' : 'Assigned instructor'}</option>
+              {availableUsers.map((optionUser) => (
+                <option key={optionUser.id} value={optionUser.id}>
+                  {optionUser.name || optionUser.email || `User ${optionUser.id}`}
                 </option>
               ))}
             </select>
+            {user?.role !== 'admin' && (
+              <p className="mt-1 text-xs text-gray-400">Only admins can reassign the responsible instructor.</p>
+            )}
           </div>
 
           <div>
@@ -504,6 +545,7 @@ const CourseFormPage = () => {
                   type="number"
                   value={formData.price}
                   onChange={(e) => handleChange('price', e.target.value)}
+                  onKeyDown={preventEnterSubmit}
                   className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none"
                   placeholder="0.00"
                 />
@@ -589,11 +631,12 @@ const CourseFormPage = () => {
                   value={formData.responsibleUserId}
                   onChange={(e) => handleChange('responsibleUserId', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none"
+                  disabled={user?.role !== 'admin'}
                 >
-                  <option value="">Select an instructor...</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name || user.email || `User ${user.id}`}
+                  <option value="">{user?.role === 'admin' ? 'Select an instructor...' : 'Assigned instructor'}</option>
+                  {availableUsers.map((optionUser) => (
+                    <option key={optionUser.id} value={optionUser.id}>
+                      {optionUser.name || optionUser.email || `User ${optionUser.id}`}
                     </option>
                   ))}
                 </select>
@@ -650,6 +693,7 @@ const CourseFormPage = () => {
                 type="text"
                 value={contactSubject}
                 onChange={(e) => setContactSubject(e.target.value)}
+                onKeyDown={preventEnterSubmit}
                 placeholder="Message Subject"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none text-sm"
               />

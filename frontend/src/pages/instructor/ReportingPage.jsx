@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Settings2, X } from 'lucide-react';
+import { Download, Loader2, Settings2, X } from 'lucide-react';
 import axios from '../../lib/axios';
 
 const defaultColumns = {
   courseName: true,
   participantName: true,
+  participantEmail: true,
   enrolledDate: true,
   startDate: true,
   timeSpent: true,
@@ -17,11 +18,11 @@ const defaultColumns = {
 const statusToChip = {
   not_started: 'Yet to Start',
   in_progress: 'In Progress',
-  completed: '✓ Completed',
+  completed: 'Completed',
 };
 
 const statusToColor = {
-  not_started: 'bg-gray-100 text-gray-700',
+  not_started: 'bg-amber-100 text-amber-700',
   in_progress: 'bg-amber-100 text-amber-700',
   completed: 'bg-green-100 text-green-700',
 };
@@ -45,11 +46,30 @@ const formatTimeSpent = (minutesValue) => {
 };
 
 const normalizeRows = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.rows)) return payload.rows;
-  if (Array.isArray(payload?.participants)) return payload.participants;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
+  const source = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.rows)
+      ? payload.rows
+      : Array.isArray(payload?.participants)
+        ? payload.participants
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+
+  return source.map((row) => ({
+    ...row,
+    id: row.id || row.enrollmentId || row.enrollment_id,
+    courseId: row.courseId || row.course_id || row.course?.id || null,
+    courseName: row.courseName || row.course_name || row.course_title || row.course?.title || row.course?.name || '-',
+    participantId: row.participantId || row.participant_id || row.user_id || row.participant?.id || null,
+    participantName: row.participantName || row.participant_name || row.user_name || row.participant?.name || '-',
+    participantEmail: row.participantEmail || row.participant_email || row.user_email || row.participant?.email || '-',
+    enrolledDate: row.enrolledDate || row.enrolled_date || row.enrolled_at || null,
+    startDate: row.startDate || row.start_date || row.started_at || null,
+    completedDate: row.completedDate || row.completed_date || row.completed_at || null,
+    completionPercent: row.completionPercent ?? row.completion_percent ?? row.progress ?? 0,
+    timeSpentMinutes: row.timeSpentMinutes ?? row.time_spent_minutes ?? row.timeSpent ?? 0,
+  }));
 };
 
 const normalizeCourses = (payload, rows) => {
@@ -90,6 +110,7 @@ const normalizeSummary = (payload, rows) => {
 export default function ReportingPage() {
   const [selectedCourseId, setSelectedCourseId] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [activityFilter, setActivityFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(defaultColumns);
@@ -111,16 +132,67 @@ export default function ReportingPage() {
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return rows;
     return rows.filter((row) => {
-      const participant =
-        row.participantName ||
-        row.participant_name ||
-        row.participant?.name ||
-        '';
-      return participant.toLowerCase().includes(query);
+      const completion = Number(row.completionPercent || 0);
+
+      if (activityFilter === 'active' && Number(row.timeSpentMinutes || 0) <= 0) {
+        return false;
+      }
+
+      if (activityFilter === 'completed' && completion < 100) {
+        return false;
+      }
+
+      if (activityFilter === 'not_completed' && completion >= 100) {
+        return false;
+      }
+
+      if (!query) return true;
+
+      const participant = row.participantName || '';
+      const email = row.participantEmail || '';
+      const course = row.courseName || '';
+      return [participant, email, course].some((value) => value.toLowerCase().includes(query));
     });
-  }, [rows, search]);
+  }, [rows, search, activityFilter]);
+
+  const exportRows = useMemo(
+    () =>
+      filteredRows.map((row) => ({
+        'Course Name': row.courseName || '-',
+        'Participant Name': row.participantName || '-',
+        'Participant Email': row.participantEmail || '-',
+        'Enrolled Date': formatDate(row.enrolledDate),
+        'Start Date': formatDate(row.startDate),
+        'Time Spent': formatTimeSpent(row.timeSpentMinutes),
+        'Completion %': `${Number(row.completionPercent || 0)}%`,
+        'Completed Date': formatDate(row.completedDate),
+        Status: statusToChip[(row.status || 'not_started').toLowerCase()] || 'Yet to Start',
+      })),
+    [filteredRows]
+  );
+
+  const handleExport = () => {
+    if (exportRows.length === 0) return;
+
+    const headers = Object.keys(exportRows[0]);
+    const csv = [
+      headers.join(','),
+      ...exportRows.map((row) =>
+        headers
+          .map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`)
+          .join(',')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `learnova-report-${selectedCourseId}-${statusFilter}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const cards = [
     {
@@ -197,21 +269,54 @@ export default function ReportingPage() {
 
       <div className="mt-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search participant..."
-            className="w-full md:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2D31D4]"
-          />
-          <button
-            type="button"
-            onClick={() => setColumnsOpen(true)}
-            className="self-start md:self-auto inline-flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Columns
-            <Settings2 className="w-4 h-4" />
-          </button>
+          <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search participant..."
+              className="w-full md:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2D31D4]"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full md:w-44 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-[#2D31D4]"
+            >
+              <option value="all">All Statuses</option>
+              <option value="not_started">Yet to Start</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+            </select>
+            <select
+              value={activityFilter}
+              onChange={(e) => setActivityFilter(e.target.value)}
+              className="w-full md:w-44 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-[#2D31D4]"
+            >
+              <option value="all">All Activity</option>
+              <option value="active">Time Spent &gt; 0</option>
+              <option value="completed">Completion 100%</option>
+              <option value="not_completed">Below 100%</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={filteredRows.length === 0}
+              className="self-start md:self-auto inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              Export to Sheets
+              <Download className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setColumnsOpen(true)}
+              className="self-start md:self-auto inline-flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Columns
+              <Settings2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -222,6 +327,7 @@ export default function ReportingPage() {
                   <th className="px-4 py-3 text-left">#</th>
                   {visibleColumns.courseName && <th className="px-4 py-3 text-left">Course Name</th>}
                   {visibleColumns.participantName && <th className="px-4 py-3 text-left">Participant</th>}
+                  {visibleColumns.participantEmail && <th className="px-4 py-3 text-left">Email</th>}
                   {visibleColumns.enrolledDate && <th className="px-4 py-3 text-left">Enrolled Date</th>}
                   {visibleColumns.startDate && <th className="px-4 py-3 text-left">Start Date</th>}
                   {visibleColumns.timeSpent && <th className="px-4 py-3 text-left">Time Spent</th>}
@@ -248,17 +354,13 @@ export default function ReportingPage() {
                   ))
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-sm text-gray-500">
                       No data found. Adjust your filters or share your course.
                     </td>
                   </tr>
                 ) : (
                   filteredRows.map((row, index) => {
-                    const completion =
-                      row.completionPercent ??
-                      row.completion_percent ??
-                      row.progress ??
-                      0;
+                    const completion = row.completionPercent ?? 0;
                     const status = (row.status || 'not_started').toLowerCase();
 
                     return (
@@ -266,27 +368,32 @@ export default function ReportingPage() {
                         <td className="px-4 py-3 text-gray-500">{index + 1}</td>
                         {visibleColumns.courseName && (
                           <td className="px-4 py-3 text-gray-800">
-                            {row.courseName || row.course_name || row.course?.title || '-'}
+                            {row.courseName || '-'}
                           </td>
                         )}
                         {visibleColumns.participantName && (
                           <td className="px-4 py-3 text-gray-900 font-medium">
-                            {row.participantName || row.participant_name || row.participant?.name || '-'}
+                            {row.participantName || '-'}
+                          </td>
+                        )}
+                        {visibleColumns.participantEmail && (
+                          <td className="px-4 py-3 text-gray-600">
+                            {row.participantEmail || '-'}
                           </td>
                         )}
                         {visibleColumns.enrolledDate && (
                           <td className="px-4 py-3 text-gray-600">
-                            {formatDate(row.enrolledDate || row.enrolled_date)}
+                            {formatDate(row.enrolledDate)}
                           </td>
                         )}
                         {visibleColumns.startDate && (
                           <td className="px-4 py-3 text-gray-600">
-                            {formatDate(row.startDate || row.start_date)}
+                            {formatDate(row.startDate)}
                           </td>
                         )}
                         {visibleColumns.timeSpent && (
                           <td className="px-4 py-3 text-gray-600">
-                            {formatTimeSpent(row.timeSpentMinutes ?? row.time_spent_minutes ?? row.timeSpent)}
+                            {formatTimeSpent(row.timeSpentMinutes)}
                           </td>
                         )}
                         {visibleColumns.completionPercent && (
@@ -301,12 +408,14 @@ export default function ReportingPage() {
                         )}
                         {visibleColumns.completedDate && (
                           <td className="px-4 py-3 text-gray-600">
-                            {formatDate(row.completedDate || row.completed_date)}
+                            {formatDate(row.completedDate)}
                           </td>
                         )}
                         {visibleColumns.status && (
                           <td className="px-4 py-3">
-                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusToColor[status] || statusToColor.not_started}`}>
+                            <span
+                              className={`inline-flex min-w-[104px] justify-center rounded-full px-3 py-1 text-xs font-medium ${statusToColor[status] || statusToColor.not_started}`}
+                            >
                               {statusToChip[status] || 'Yet to Start'}
                             </span>
                           </td>
@@ -340,6 +449,7 @@ export default function ReportingPage() {
           {[
             ['courseName', 'Course Name'],
             ['participantName', 'Participant Name'],
+            ['participantEmail', 'Participant Email'],
             ['enrolledDate', 'Enrolled Date'],
             ['startDate', 'Start Date'],
             ['timeSpent', 'Time Spent'],

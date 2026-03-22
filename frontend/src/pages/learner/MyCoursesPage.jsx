@@ -4,24 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from '../../lib/axios';
 import useAuthStore from '../../store/authStore';
 import CourseCard from '../../components/course/CourseCard';
-
-const badgeLevels = [
-  { name: 'Newbie', min: 0, max: 20, emoji: '🥈', color: 'text-gray-600' },
-  { name: 'Explorer', min: 21, max: 40, emoji: '🥉', color: 'text-blue-600' },
-  { name: 'Achiever', min: 41, max: 60, emoji: '🏅', color: 'text-green-600' },
-  { name: 'Specialist', min: 61, max: 80, emoji: '🎖️', color: 'text-purple-600' },
-  { name: 'Expert', min: 81, max: 100, emoji: '🏆', color: 'text-amber-500' },
-  { name: 'Master', min: 101, max: Number.POSITIVE_INFINITY, emoji: '👑', color: 'text-red-600' },
-];
-
-const getBadge = (points) => {
-  const current = badgeLevels.find((b) => points >= b.min && points <= b.max) || badgeLevels[0];
-  const next = badgeLevels.find((b) => b.min > current.min) || null;
-  const rangeMax = Number.isFinite(current.max) ? current.max : points;
-  const denom = Math.max(1, rangeMax - current.min + 1);
-  const progress = Number.isFinite(current.max) ? ((points - current.min) / denom) * 100 : 100;
-  return { current, next, progress: Math.max(0, Math.min(100, progress)) };
-};
+import { getBadgeMeta } from '../../lib/badges';
 
 const getInitials = (name) =>
   (name || 'User')
@@ -35,6 +18,7 @@ export default function MyCoursesPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuthStore();
   const [search, setSearch] = useState('');
+  const [boardFilter, setBoardFilter] = useState('all');
 
   const { data: courses = [], isLoading } = useQuery({
     queryKey: ['my-courses'],
@@ -73,13 +57,37 @@ export default function MyCoursesPage() {
   });
 
   const points = Number(user?.totalPoints || user?.points || 0);
-  const badge = getBadge(points);
+  const badge = getBadgeMeta(points);
 
   const filteredCourses = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return courses;
     return courses.filter((course) => (course.title || '').toLowerCase().includes(q));
   }, [courses, search]);
+
+  const courseBuckets = useMemo(() => {
+    const isCompleted = (course) => {
+      const progress = Number(course.progress || course.completionPercent || 0);
+      return (course.status || '').toLowerCase() === 'completed' || progress >= 100;
+    };
+
+    const isInProgress = (course) => {
+      const progress = Number(course.progress || course.completionPercent || 0);
+      const status = (course.status || '').toLowerCase();
+      return status === 'in_progress' || (progress > 0 && progress < 100);
+    };
+
+    const isYetToStart = (course) => !isCompleted(course) && !isInProgress(course);
+
+    return {
+      all: filteredCourses,
+      not_started: filteredCourses.filter(isYetToStart),
+      in_progress: filteredCourses.filter(isInProgress),
+      completed: filteredCourses.filter(isCompleted),
+    };
+  }, [filteredCourses]);
+
+  const activeCourses = courseBuckets[boardFilter] || courseBuckets.all;
 
   const stats = useMemo(() => {
     const enrolled = courses.length;
@@ -187,10 +195,104 @@ export default function MyCoursesPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {filteredCourses.map((course) => (
-              <CourseCard key={course.id} course={course} isAuthenticated={isAuthenticated} />
-            ))}
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <button
+                type="button"
+                onClick={() => setBoardFilter('all')}
+                className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                  boardFilter === 'all'
+                    ? 'border-[#2D31D4] bg-[#EEF0FF] shadow-sm shadow-[#2D31D4]/10'
+                    : 'border-gray-200 bg-white hover:border-[#C8CCFF] hover:bg-[#F7F8FF]'
+                }`}
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2D31D4]">All Courses</p>
+                <p className="mt-3 text-3xl font-bold text-gray-900">{courseBuckets.all.length}</p>
+                <p className="mt-1 text-sm text-gray-500">Every enrolled course in one board</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBoardFilter('not_started')}
+                className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                  boardFilter === 'not_started'
+                    ? 'border-amber-300 bg-amber-50 shadow-sm shadow-amber-200/60'
+                    : 'border-gray-200 bg-white hover:border-amber-200 hover:bg-amber-50/60'
+                }`}
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Yet to Start</p>
+                <p className="mt-3 text-3xl font-bold text-gray-900">{courseBuckets.not_started.length}</p>
+                <p className="mt-1 text-sm text-gray-500">Courses waiting for the first lesson</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBoardFilter('in_progress')}
+                className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                  boardFilter === 'in_progress'
+                    ? 'border-sky-300 bg-sky-50 shadow-sm shadow-sky-200/60'
+                    : 'border-gray-200 bg-white hover:border-sky-200 hover:bg-sky-50/60'
+                }`}
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">In Progress</p>
+                <p className="mt-3 text-3xl font-bold text-gray-900">{courseBuckets.in_progress.length}</p>
+                <p className="mt-1 text-sm text-gray-500">Courses actively being learned</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBoardFilter('completed')}
+                className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                  boardFilter === 'completed'
+                    ? 'border-emerald-300 bg-emerald-50 shadow-sm shadow-emerald-200/60'
+                    : 'border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/60'
+                }`}
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Completed</p>
+                <p className="mt-3 text-3xl font-bold text-gray-900">{courseBuckets.completed.length}</p>
+                <p className="mt-1 text-sm text-gray-500">Courses already finished</p>
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {boardFilter === 'all'
+                      ? 'All Enrolled Courses'
+                      : boardFilter === 'not_started'
+                        ? 'Yet to Start'
+                        : boardFilter === 'in_progress'
+                          ? 'In Progress'
+                          : 'Completed'}
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {boardFilter === 'all'
+                      ? 'A single learner board for every course you have access to.'
+                      : boardFilter === 'not_started'
+                        ? 'Start any of these courses to move them into progress.'
+                        : boardFilter === 'in_progress'
+                          ? 'Pick up from where you left off and continue learning.'
+                          : 'Your finished courses stay here for quick revisits.'}
+                  </p>
+                </div>
+                <div className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">
+                  {activeCourses.length} course{activeCourses.length === 1 ? '' : 's'}
+                </div>
+              </div>
+
+              {activeCourses.length === 0 ? (
+                <div className="mt-5 rounded-xl border-2 border-dashed border-gray-200 px-6 py-16 text-center text-sm text-gray-400">
+                  No courses in this section right now.
+                </div>
+              ) : (
+                <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                  {activeCourses.map((course) => (
+                    <CourseCard key={course.id} course={course} isAuthenticated={isAuthenticated} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>

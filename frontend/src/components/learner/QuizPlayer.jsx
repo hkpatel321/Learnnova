@@ -1,31 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { getBadgeMeta } from '../../lib/badges';
+import useAuthStore from '../../store/authStore';
 
 const defaultPoints = {
-  points_1: 20,
-  points_2: 12,
-  points_3: 8,
-  points_4: 4,
-};
-
-const badgeLevels = [
-  { name: 'Newbie', min: 0, max: 20, icon: '🥈' },
-  { name: 'Explorer', min: 21, max: 40, icon: '🥉' },
-  { name: 'Achiever', min: 41, max: 60, icon: '🏅' },
-  { name: 'Specialist', min: 61, max: 80, icon: '🎖️' },
-  { name: 'Expert', min: 81, max: 100, icon: '🏆' },
-  { name: 'Master', min: 101, max: Number.POSITIVE_INFINITY, icon: '👑' },
-];
-
-const getBadgeMeta = (points) => {
-  const current = badgeLevels.find((b) => points >= b.min && points <= b.max) || badgeLevels[0];
-  const next = badgeLevels.find((b) => b.min > current.min) || null;
-  const range = Number.isFinite(current.max) ? current.max - current.min + 1 : 1;
-  const progress = Number.isFinite(current.max) ? ((points - current.min) / range) * 100 : 100;
-  return { current, next, progress: Math.max(0, Math.min(100, progress)) };
+  points_1: 4,
+  points_2: 3,
+  points_3: 2,
+  points_4: 1,
 };
 
 const getQuizStorageKey = (quizId) => `learnnova.quiz-progress.${quizId}`;
@@ -83,6 +68,8 @@ const normalizeQuizPayload = (payload, fallbackQuizId) => {
 };
 
 const QuizPlayer = ({ quizId, onComplete }) => {
+  const queryClient = useQueryClient();
+  const updateUser = useAuthStore((state) => state.updateUser);
   const [viewState, setViewState] = useState('intro');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
@@ -311,18 +298,40 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         pointsEarned,
         answersReview: data.answersReview || data.review || [],
         totalPoints: Number(data.totalPoints || data.total_points || 0),
+        rewardPerCorrect: Number(data.rewardPerCorrect || 0),
+        scorePoints: Number(data.scorePoints || 0),
+        previousBestScore: Number(data.previousBestScore || 0),
         attemptedAt,
       });
 
       if (pointsEarned > 0) {
         toast(`${pointsEarned} points earned! 🏆`, { icon: '⭐', style: { background: '#F59E0B', color: 'black' } });
+      } else if (correct > 0) {
+        toast('You answered correctly, but only new best scores add points.', { icon: '📈' });
+      }
+
+      if (Number.isFinite(Number(data.totalPoints))) {
+        const nextTotalPoints = Number(data.totalPoints);
+        updateUser((prevUser) => ({
+          ...prevUser,
+          totalPoints: nextTotalPoints,
+          points: nextTotalPoints,
+        }));
+        queryClient.invalidateQueries({ queryKey: ['auth-me'] });
       }
 
       setRuntimeQuiz((prev) => ({
         ...(prev || quiz),
         attempt_count: attemptCount + 1,
         attempts: [
-          { attempt: attemptCount + 1, points: pointsEarned, date: attemptedAt },
+          {
+            attempt: attemptCount + 1,
+            points: Number(data.scorePoints || pointsEarned || 0),
+            scorePoints: Number(data.scorePoints || pointsEarned || 0),
+            awardedPoints: pointsEarned,
+            correctAnswers: correct,
+            date: attemptedAt,
+          },
           ...(Array.isArray(attempts) ? attempts : []),
         ],
       }));
@@ -345,6 +354,12 @@ const QuizPlayer = ({ quizId, onComplete }) => {
   const selectedOptionId = currentQuestion ? selectedAnswers[currentQuestion.id] : null;
   const pointsTotal = Number(resultData?.totalPoints || 0);
   const badge = getBadgeMeta(pointsTotal);
+  const previousPointsTotal = Math.max(0, pointsTotal - Number(resultData?.pointsEarned || 0));
+  const previousBadge = getBadgeMeta(previousPointsTotal);
+  const unlockedBadge =
+    badge.current.name !== previousBadge.current.name && badge.current.name !== 'Starter'
+      ? badge.current
+      : null;
 
   const submitAnswers = () => {
     const answers = questions.map((q) => ({
@@ -389,30 +404,32 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         <div className="grid grid-cols-2 gap-3 bg-[#F4F5FF] rounded-xl p-4 mt-4 text-sm text-gray-700">
           <p>📝 {totalQuestions} Questions</p>
           <p>🔄 Multiple attempts</p>
-          <p>🏆 Up to {points1} pts (1st try)</p>
-          <p>✓ Get all correct to pass</p>
+          <p>🏆 Up to {points1 * totalQuestions} pts on 1st try</p>
+          <p>✓ More correct answers = more points</p>
         </div>
 
         <div className="flex flex-wrap gap-2 justify-center mt-4 text-sm md:text-xs">
-          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">1st: {points1}pts</span>
-          <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">2nd: {points2}pts</span>
-          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">3rd: {points3}pts</span>
-          <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">4th+: {points4}pts</span>
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">1st: {points1} pts/question</span>
+          <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">2nd: {points2} pts/question</span>
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">3rd: {points3} pts/question</span>
+          <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">4th+: {points4} pts/question</span>
         </div>
 
         {attemptCount > 0 ? (
           <div className="mt-4">
             <p className="text-sm text-gray-500 mb-2">Previous attempts</p>
             <div className="rounded-lg border border-gray-200 overflow-hidden text-xs">
-              <div className="grid grid-cols-3 bg-gray-50 text-gray-500 px-3 py-2 font-medium">
+              <div className="grid grid-cols-4 bg-gray-50 text-gray-500 px-3 py-2 font-medium">
                 <span>Attempt #</span>
-                <span>Points Earned</span>
+                <span>Score</span>
+                <span>Added</span>
                 <span>Date</span>
               </div>
               {(attempts || []).slice(0, 4).map((row, idx) => (
-                <div key={idx} className="grid grid-cols-3 px-3 py-2 border-t border-gray-100 text-gray-700">
+                <div key={idx} className="grid grid-cols-4 px-3 py-2 border-t border-gray-100 text-gray-700">
                   <span>#{row.attempt || idx + 1}</span>
-                  <span>{row.points || 0}</span>
+                  <span>{row.scorePoints ?? row.points ?? 0}</span>
+                  <span>{row.awardedPoints ?? row.pointsEarned ?? row.points ?? 0}</span>
                   <span>{row.date ? new Date(row.date).toLocaleDateString() : '-'}</span>
                 </div>
               ))}
@@ -590,12 +607,16 @@ const QuizPlayer = ({ quizId, onComplete }) => {
           {passed ? 'Quiz Complete!' : 'Not quite right'}
         </h2>
         <p className="mt-1 text-gray-500">{resultData?.correct} / {resultData?.total} Correct</p>
-        {!passed ? <p className="text-sm text-gray-500 mt-1">You need all correct to earn points.</p> : null}
+        <p className="text-sm text-gray-500 mt-1">
+          {resultData?.rewardPerCorrect || 0} point(s) per correct answer on this attempt
+        </p>
 
-        {passed ? (
+        {resultData ? (
           <div className="mt-6 bg-amber-50 rounded-2xl p-6 text-center">
             <p className="text-4xl font-extrabold text-amber-500">+{countUpPoints} Points!</p>
-            <p className="text-sm text-gray-500">added to your total</p>
+            <p className="text-sm text-gray-500">
+              {resultData?.scorePoints || 0} score points this attempt, {resultData?.pointsEarned || 0} added to your total
+            </p>
             <div className="mt-4">
               <p className="text-sm font-semibold text-gray-800">{badge.current.icon} {badge.current.name}</p>
               <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -605,6 +626,11 @@ const QuizPlayer = ({ quizId, onComplete }) => {
                 {badge.next ? `Only ${Math.max(0, badge.next.min - pointsTotal)} pts to ${badge.next.name}!` : 'You reached top badge!'}
               </p>
             </div>
+            {unlockedBadge ? (
+              <p className="mt-3 text-sm font-semibold text-emerald-700">
+                Badge unlocked: {unlockedBadge.icon} {unlockedBadge.name}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

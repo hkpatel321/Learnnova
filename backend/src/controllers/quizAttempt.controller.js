@@ -2,6 +2,64 @@ const prisma = require('../config/db');
 const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 const { syncEnrollmentCourseProgress } = require('../utils/courseProgress');
 
+const DEFAULT_ATTEMPT_REWARD_RULES = {
+  attempt1: 4,
+  attempt2: 3,
+  attempt3: 2,
+  attempt4plus: 1,
+};
+
+const clampReward = (value, fallback) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback;
+  return Math.min(4, Math.round(numeric));
+};
+
+const getAttemptRewardRules = (quiz) => {
+  const attempt1 = Math.max(1, clampReward(quiz?.pointsAttempt1, DEFAULT_ATTEMPT_REWARD_RULES.attempt1));
+  const attempt2 = Math.min(
+    clampReward(quiz?.pointsAttempt2, DEFAULT_ATTEMPT_REWARD_RULES.attempt2),
+    Math.max(0, attempt1 - 1)
+  );
+  const attempt3 = Math.min(
+    clampReward(quiz?.pointsAttempt3, DEFAULT_ATTEMPT_REWARD_RULES.attempt3),
+    Math.max(0, attempt2 - 1)
+  );
+  const attempt4plus = Math.min(
+    clampReward(quiz?.pointsAttempt4plus, DEFAULT_ATTEMPT_REWARD_RULES.attempt4plus),
+    Math.max(0, attempt3 - 1)
+  );
+
+  return {
+    attempt1,
+    attempt2,
+    attempt3,
+    attempt4plus,
+  };
+};
+
+const getRewardPerCorrectAnswer = (rules, attemptNumber) => {
+  if (attemptNumber <= 1) return rules.attempt1;
+  if (attemptNumber === 2) return rules.attempt2;
+  if (attemptNumber === 3) return rules.attempt3;
+  return rules.attempt4plus;
+};
+
+const mapAttemptSummary = (attempt, rewardRules) => {
+  const scorePoints =
+    Number(attempt.correctAnswers || 0) *
+    getRewardPerCorrectAnswer(rewardRules, Number(attempt.attemptNumber || 1));
+
+  return {
+    attempt: attempt.attemptNumber,
+    points: scorePoints,
+    scorePoints,
+    awardedPoints: Number(attempt.pointsEarned || 0),
+    correctAnswers: Number(attempt.correctAnswers || 0),
+    date: attempt.attemptedAt,
+  };
+};
+
 // ── 3. getQuizForPlayer ──────────────────────────────────────────
 
 const getQuizForPlayer = async (req, res, next) => {
@@ -37,21 +95,25 @@ const getQuizForPlayer = async (req, res, next) => {
       });
     }
 
-    const attemptCount = await prisma.quizAttempt.count({
+    const rewardRules = getAttemptRewardRules(quiz);
+    const attempts = await prisma.quizAttempt.findMany({
       where: { userId, quizId },
+      select: {
+        attemptNumber: true,
+        correctAnswers: true,
+        pointsEarned: true,
+        attemptedAt: true,
+      },
+      orderBy: { attemptedAt: 'desc' },
     });
 
     return res.json({
       success: true,
       data: {
         quiz,
-        attemptCount,
-        rewards: {
-          attempt1: quiz.pointsAttempt1,
-          attempt2: quiz.pointsAttempt2,
-          attempt3: quiz.pointsAttempt3,
-          attempt4plus: quiz.pointsAttempt4plus,
-        },
+        attemptCount: attempts.length,
+        attempts: attempts.map((attempt) => mapAttemptSummary(attempt, rewardRules)),
+        rewards: rewardRules,
       },
     });
   } catch (err) {
@@ -98,10 +160,15 @@ const submitQuiz = async (req, res, next) => {
       include: { course: { select: { lessons: true } } },
     });
 
-    const pastAttemptsCount = await prisma.quizAttempt.count({
+    const rewardRules = getAttemptRewardRules(quiz);
+    const pastAttempts = await prisma.quizAttempt.findMany({
       where: { userId, quizId },
+      select: {
+        attemptNumber: true,
+        correctAnswers: true,
+      },
     });
-    const attemptNumber = pastAttemptsCount + 1;
+    const attemptNumber = pastAttempts.length + 1;
 
     let correctCount = 0;
     const totalCount = quiz.questions.length;
@@ -174,17 +241,18 @@ const submitQuiz = async (req, res, next) => {
       });
     }
 
+    const rewardPerCorrect = getRewardPerCorrectAnswer(rewardRules, attemptNumber);
+    const currentAttemptScore = correctCount * rewardPerCorrect;
+    const previousBestScore = pastAttempts.reduce((best, attempt) => {
+      const priorReward = getRewardPerCorrectAnswer(rewardRules, attempt.attemptNumber);
+      return Math.max(best, Number(attempt.correctAnswers || 0) * priorReward);
+    }, 0);
+
     // All correct = passed
     const passed = correctCount === totalCount && totalCount > 0;
 
-    // Calculate points based on attempt number (if passed)
-    let pointsEarned = 0;
-    if (passed) {
-      if (attemptNumber === 1) pointsEarned = quiz.pointsAttempt1;
-      else if (attemptNumber === 2) pointsEarned = quiz.pointsAttempt2;
-      else if (attemptNumber === 3) pointsEarned = quiz.pointsAttempt3;
-      else pointsEarned = quiz.pointsAttempt4plus;
-    }
+    // Learners earn only the improvement above their previous best score for this quiz.
+    const pointsEarned = Math.max(0, currentAttemptScore - previousBestScore);
 
     // Transaction logic (replaces fn_award_quiz_points and fn_complete_lesson)
     const result = await prisma.$transaction(async (tx) => {
@@ -251,6 +319,11 @@ const submitQuiz = async (req, res, next) => {
         pointsEarned,
         attemptNumber,
         totalPoints: result.newTotalPoints,
+        attemptedAt: result.attempt.attemptedAt,
+        rewardRules,
+        rewardPerCorrect,
+        scorePoints: currentAttemptScore,
+        previousBestScore,
         answersReview: answersData.map((item) => ({
           questionId: item.questionId,
           questionText: item.questionText,
@@ -289,13 +362,23 @@ const getQuizAttemptHistory = async (req, res, next) => {
 
     const attempts = await prisma.quizAttempt.findMany({
       where: { userId, quizId },
-      include: {
-        answers: true,
+      select: {
+        attemptNumber: true,
+        correctAnswers: true,
+        pointsEarned: true,
+        attemptedAt: true,
       },
       orderBy: { attemptedAt: 'desc' },
     });
 
-    return res.json({ success: true, data: { attempts } });
+    const rewardRules = getAttemptRewardRules(quiz);
+
+    return res.json({
+      success: true,
+      data: {
+        attempts: attempts.map((attempt) => mapAttemptSummary(attempt, rewardRules)),
+      },
+    });
   } catch (err) {
     next(err);
   }

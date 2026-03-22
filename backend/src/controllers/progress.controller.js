@@ -213,8 +213,77 @@ const completeCourse = async (req, res, next) => {
   }
 };
 
+const addLessonTimeSpent = async (req, res, next) => {
+  try {
+    const { lessonId } = req.params;
+    const userId = req.user.id;
+    const minutesSpent = Number(req.body.minutesSpent || 0);
+
+    if (!Number.isInteger(minutesSpent) || minutesSpent <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'minutesSpent must be a positive integer',
+      });
+    }
+
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      select: {
+        id: true,
+        courseId: true,
+      },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    const access = await getLearnerCourseAccess(prisma, { userId, courseId: lesson.courseId });
+    if (!access.ok) {
+      return res.status(access.status).json({
+        success: false,
+        message: access.message,
+        ...(access.code ? { code: access.code } : {}),
+      });
+    }
+
+    const enrollment = await prisma.enrollment.update({
+      where: {
+        userId_courseId: {
+          userId,
+          courseId: lesson.courseId,
+        },
+      },
+      data: {
+        timeSpentMins: {
+          increment: minutesSpent,
+        },
+      },
+      select: {
+        id: true,
+        timeSpentMins: true,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        lessonId,
+        addedMinutes: minutesSpent,
+        totalTimeSpentMins: enrollment.timeSpentMins,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   completeLesson,
   getCourseProgress,
   completeCourse,
+  addLessonTimeSpent,
 };

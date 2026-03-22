@@ -86,6 +86,9 @@ const createCourse = async (req, res, next) => {
 const getAllCourses = async (req, res, next) => {
   try {
     const { search } = req.query;
+    const page = Math.max(1, Number(req.query.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 8)));
+    const skip = (page - 1) * pageSize;
 
     // Build where clause
     const where = {};
@@ -100,15 +103,20 @@ const getAllCourses = async (req, res, next) => {
       where.title = { contains: search, mode: 'insensitive' };
     }
 
-    const courses = await prisma.course.findMany({
-      where,
-      include: {
-        responsible: { select: { name: true } },
-        lessons: { select: { id: true, durationMins: true } },
-        _count: { select: { learnerLinks: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [courses, totalCount] = await prisma.$transaction([
+      prisma.course.findMany({
+        where,
+        include: {
+          responsible: { select: { name: true } },
+          lessons: { select: { id: true, durationMins: true } },
+          _count: { select: { learnerLinks: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      prisma.course.count({ where }),
+    ]);
 
     // Map to flatten and add aggregated fields
     const data = courses.map((c) => {
@@ -129,7 +137,20 @@ const getAllCourses = async (req, res, next) => {
       };
     });
 
-    return res.json({ success: true, data: { courses: data } });
+    return res.json({
+      success: true,
+      data: {
+        courses: data,
+        pagination: {
+          page,
+          pageSize,
+          totalCount,
+          totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+          hasPreviousPage: page > 1,
+          hasNextPage: skip + data.length < totalCount,
+        },
+      },
+    });
   } catch (err) {
     next(err);
   }

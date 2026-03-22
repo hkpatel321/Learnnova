@@ -145,9 +145,14 @@ export default function CourseDetailPage() {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [visibleReviews, setVisibleReviews] = useState(5);
   const [deletingReviewId, setDeletingReviewId] = useState(null);
+  const [optimisticPaymentState, setOptimisticPaymentState] = useState(null);
   const handledStripeSessionIdRef = useRef(null);
   const stripeStatus = searchParams.get('stripe_status');
   const stripeSessionId = searchParams.get('session_id');
+  const optimisticPaymentUnlocked =
+    optimisticPaymentState?.courseId === courseId &&
+    optimisticPaymentState?.authScope === authScope &&
+    optimisticPaymentState?.unlocked === true;
 
   const { data: course, isLoading: courseLoading } = useQuery({
     queryKey: ['course-detail', courseId, authScope],
@@ -230,6 +235,7 @@ export default function CourseDetailPage() {
       return res.data?.data || res.data;
     },
     onSuccess: async () => {
+      setOptimisticPaymentState({ courseId, authScope, unlocked: true });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
@@ -310,11 +316,12 @@ export default function CourseDetailPage() {
   const isCompletedCourse = completionPercent >= 100 || (progress?.status || '').toLowerCase() === 'completed';
   const isInProgress = completionPercent > 0 && completionPercent < 100;
   const price = Number(course?.price || 0);
-  const isPaid = !!(progress?.isPaid || course?.isPaid);
+  const isPaid = !!(progress?.isPaid || course?.isPaid || optimisticPaymentUnlocked);
   const requiresPayment = !!(course?.requiresPayment || price > 0);
   const canAccessCourse = !!(
     progress?.isEnrolled ||
     course?.canAccessCourse ||
+    optimisticPaymentUnlocked ||
     (requiresPayment ? isPaid : isEnrolled)
   );
   const isRestricted = ['invitation', 'payment'].includes((course?.accessRule || '').toLowerCase());
@@ -381,7 +388,7 @@ export default function CourseDetailPage() {
   const isBusy =
     enrollMutation.isPending ||
     createPaymentOrderMutation.isPending ||
-    verifyPaymentMutation.isPending;
+    (verifyPaymentMutation.isPending && !optimisticPaymentUnlocked);
 
   const completedCount = lessons.filter((lesson) => completedLessonIds.has(lesson.id)).length;
   const remainingCount = Math.max(0, lessons.length - completedCount);
@@ -423,6 +430,7 @@ export default function CourseDetailPage() {
       const orderData = await createPaymentOrderMutation.mutateAsync();
 
       if (orderData?.alreadyPaid) {
+        setOptimisticPaymentState({ courseId, authScope, unlocked: true });
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
           queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),

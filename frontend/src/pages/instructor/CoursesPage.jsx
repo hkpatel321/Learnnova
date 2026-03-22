@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Search, LayoutGrid, List, Plus, Edit, Share2, Eye, BookOpen, Clock } from 'lucide-react';
+import { Search, LayoutGrid, List, Plus, Edit, Share2, Eye, BookOpen, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
 import { resolveMediaUrl } from '../../lib/media';
 import Modal from '../../components/ui/Modal';
+
+const EMPTY_COURSES = [];
 
 const LoadingSkeletons = () => (
   <div className="bg-white border border-gray-200 rounded-xl p-4 animate-pulse">
@@ -49,23 +51,43 @@ const normalizeCourse = (course) => ({
 const CoursesPage = () => {
   const [viewMode, setViewMode] = useState('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+  const [boardFilter, setBoardFilter] = useState('published');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newCourseTitle, setNewCourseTitle] = useState('');
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: courses = [], isLoading } = useQuery({
-    queryKey: ['instructor-courses', searchQuery],
+  const { data: courseResponse, isLoading } = useQuery({
+    queryKey: ['instructor-courses', searchQuery, page, pageSize],
     queryFn: async () => {
       const response = await axios.get('/courses', {
-        params: searchQuery.trim() ? { search: searchQuery.trim() } : undefined,
+        params: {
+          ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
+          page,
+          pageSize,
+        },
       });
-      const data = response.data?.data?.courses || response.data?.courses || response.data;
-      if (!Array.isArray(data)) return [];
-      return data.map(normalizeCourse);
+      const payload = response.data?.data || response.data;
+      const data = payload?.courses || response.data?.courses || response.data;
+      return {
+        courses: Array.isArray(data) ? data.map(normalizeCourse) : [],
+        pagination: payload?.pagination || null,
+      };
     },
   });
+
+  const courses = courseResponse?.courses || EMPTY_COURSES;
+  const pagination = courseResponse?.pagination || {
+    page,
+    pageSize,
+    totalCount: courses.length,
+    totalPages: 1,
+    hasPreviousPage: page > 1,
+    hasNextPage: false,
+  };
 
   const createCourseMutation = useMutation({
     mutationFn: async (title) => {
@@ -85,13 +107,18 @@ const CoursesPage = () => {
   });
 
   const filteredCourses = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return courses;
-    return courses.filter((course) => (course.title || '').toLowerCase().includes(query));
-  }, [courses, searchQuery]);
+    return courses;
+  }, [courses]);
 
   const draftCourses = filteredCourses.filter((course) => !course.published);
   const publishedCourses = filteredCourses.filter((course) => course.published);
+  const allCourses = filteredCourses;
+  const boardCourses = boardFilter === 'draft' ? draftCourses : publishedCourses;
+  const boardTitle = boardFilter === 'draft' ? 'Draft Courses' : 'Published Courses';
+  const boardDescription =
+    boardFilter === 'draft'
+      ? 'Review works in progress, incomplete outlines, and courses still waiting to go live.'
+      : 'Track the courses that are already live and ready for learners.';
 
   const handleCreateCourse = (e) => {
     e.preventDefault();
@@ -100,6 +127,11 @@ const CoursesPage = () => {
       return;
     }
     createCourseMutation.mutate(newCourseTitle.trim());
+  };
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setPage(1);
   };
 
   const copyToClipboard = async (course) => {
@@ -217,7 +249,7 @@ const CoursesPage = () => {
               type="text"
               placeholder="Search courses by name..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="block w-full sm:w-72 pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-[#2D31D4] focus:border-[#2D31D4] outline-none"
             />
           </div>
@@ -271,52 +303,139 @@ const CoursesPage = () => {
           </button>
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-200">
-              <h3 className="font-semibold text-gray-700 flex items-center">
-                Drafts
-                <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2.5 rounded-full text-xs font-medium">
-                  {draftCourses.length}
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => setBoardFilter('published')}
+              className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                boardFilter === 'published'
+                  ? 'border-[#2D31D4] bg-[#EEF0FF] shadow-sm shadow-[#2D31D4]/10'
+                  : 'border-gray-200 bg-white hover:border-[#C8CCFF] hover:bg-[#F7F8FF]'
+              }`}
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2D31D4]">Published</div>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-3xl font-bold text-gray-900">{publishedCourses.length}</p>
+                  <p className="mt-1 text-sm text-gray-500">Live courses ready for learners</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2D31D4] shadow-sm">
+                  {boardFilter === 'published' ? 'Active board' : 'Open board'}
                 </span>
-              </h3>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBoardFilter('draft')}
+              className={`rounded-2xl border px-5 py-4 text-left transition-all ${
+                boardFilter === 'draft'
+                  ? 'border-[#2D31D4] bg-[#EEF0FF] shadow-sm shadow-[#2D31D4]/10'
+                  : 'border-gray-200 bg-white hover:border-[#C8CCFF] hover:bg-[#F7F8FF]'
+              }`}
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Draft</div>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-3xl font-bold text-gray-900">{draftCourses.length}</p>
+                  <p className="mt-1 text-sm text-gray-500">Courses still being prepared</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-600 shadow-sm">
+                  {boardFilter === 'draft' ? 'Active board' : 'Open board'}
+                </span>
+              </div>
+            </button>
+
+            <div className="rounded-2xl border border-gray-200 bg-white px-5 py-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">Visible Now</div>
+              <p className="mt-3 text-3xl font-bold text-gray-900">{boardCourses.length}</p>
+              <p className="mt-1 text-sm text-gray-500">Courses shown in the current kanban</p>
             </div>
 
-            {draftCourses.map((course) => (
-              <CourseCard key={course.id} course={course} />
-            ))}
+            <div className="rounded-2xl border border-gray-200 bg-white px-5 py-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">All Courses</div>
+              <p className="mt-3 text-3xl font-bold text-gray-900">{allCourses.length}</p>
+              <p className="mt-1 text-sm text-gray-500">Across draft and published states</p>
+            </div>
+          </div>
 
-            {draftCourses.length === 0 && (
-              <div className="p-8 text-center text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-                No draft courses
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">{boardTitle}</h2>
+                <p className="mt-1 text-sm text-gray-500">{boardDescription}</p>
+              </div>
+              <div className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">
+                {boardCourses.length} course{boardCourses.length === 1 ? '' : 's'}
+              </div>
+            </div>
+
+            {boardCourses.length === 0 ? (
+              <div className="mt-5 rounded-xl border-2 border-dashed border-gray-200 px-6 py-16 text-center text-sm text-gray-400">
+                {boardFilter === 'draft' ? 'No draft courses found.' : 'No published courses found.'}
+              </div>
+            ) : (
+              <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {boardCourses.map((course) => (
+                  <CourseCard key={course.id} course={course} />
+                ))}
               </div>
             )}
           </div>
 
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-200">
-              <h3 className="font-semibold text-gray-700 flex items-center">
-                Published
-                <span className="ml-2 bg-[#EEF0FF] text-[#2D31D4] py-0.5 px-2.5 rounded-full text-xs font-medium">
-                  {publishedCourses.length}
-                </span>
-              </h3>
+          <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-gray-600">
+              Showing page {pagination.page} of {pagination.totalPages} with {pagination.totalCount} total courses
             </div>
-
-            {publishedCourses.map((course) => (
-              <CourseCard key={course.id} course={course} />
-            ))}
-
-            {publishedCourses.length === 0 && (
-              <div className="p-8 text-center text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-                No published courses
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span>Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-[#2D31D4]"
+                >
+                  {[6, 8, 12, 16].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={!pagination.hasPreviousPage}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </button>
+                <span className="min-w-[72px] text-center text-sm font-medium text-gray-700">
+                  {pagination.page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={!pagination.hasNextPage}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[980px]">
               <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
                 <tr>
@@ -404,6 +523,54 @@ const CoursesPage = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+          <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-gray-600">
+              Showing page {pagination.page} of {pagination.totalPages} with {pagination.totalCount} total courses
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <span>Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-[#2D31D4]"
+                >
+                  {[6, 8, 12, 16].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={!pagination.hasPreviousPage}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </button>
+                <span className="min-w-[72px] text-center text-sm font-medium text-gray-700">
+                  {pagination.page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={!pagination.hasNextPage}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

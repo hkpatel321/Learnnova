@@ -88,6 +88,24 @@ const useAuthStore = create((set) => ({
     set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false, isHydrated: true });
   },
 
+  updateUser: (nextUserOrPatch) =>
+    set((state) => {
+      if (!state.user) return state;
+
+      const nextUser =
+        typeof nextUserOrPatch === 'function'
+          ? nextUserOrPatch(state.user)
+          : { ...state.user, ...nextUserOrPatch };
+
+      persistAuth({
+        user: nextUser,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+      });
+
+      return { user: nextUser };
+    }),
+
   initAuth: () => {
     set(readStoredAuth());
   },

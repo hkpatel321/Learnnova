@@ -8,6 +8,23 @@ const courseController = require('../controllers/course.controller');
 
 const router = Router();
 
+const isValidCoursePath = (value) => {
+  if (value === undefined || value === null || value === '') return true;
+
+  const normalized = String(value).trim();
+  if (!normalized) return true;
+
+  const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+  if (slugPattern.test(normalized)) return true;
+
+  try {
+    const parsed = new URL(normalized);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
 // ── PUBLIC routes (no auth) ──────────────────────────────────────
 
 // GET /api/courses/catalog
@@ -50,7 +67,11 @@ router.get(
   '/',
   authenticate,
   requireRole('instructor', 'admin'),
-  [query('search').optional().isString().trim().isLength({ max: 120 })],
+  [
+    query('search').optional().isString().trim().isLength({ max: 120 }),
+    query('page').optional().isInt({ min: 1, max: 100000 }).withMessage('page must be a positive integer'),
+    query('pageSize').optional().isInt({ min: 1, max: 100 }).withMessage('pageSize must be between 1 and 100'),
+  ],
   validate,
   courseController.getAllCourses
 );
@@ -88,7 +109,10 @@ router.put(
     body('description').optional({ nullable: true }).isString().isLength({ max: 5000 }),
     body('tags').optional().isArray({ max: 30 }).withMessage('tags must be an array'),
     body('tags.*').optional().isString().trim().isLength({ min: 1, max: 40 }),
-    body('websiteUrl').optional({ nullable: true }).isURL().withMessage('websiteUrl must be a valid URL'),
+    body('websiteUrl')
+      .optional({ nullable: true })
+      .custom(isValidCoursePath)
+      .withMessage('websiteUrl must be a valid slug or URL'),
     body('responsibleId').optional({ nullable: true }).isUUID().withMessage('responsibleId must be a valid user id'),
     body('visibility').optional().isIn(['everyone', 'signed_in']),
     body('accessRule').optional().isIn(['open', 'invitation', 'payment']),
