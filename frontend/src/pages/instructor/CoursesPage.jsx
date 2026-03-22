@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, LayoutGrid, List, Plus, Edit, Share2, Eye, BookOpen, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { getCoursePath } from '../../lib/coursePath';
 import { resolveMediaUrl } from '../../lib/media';
 import Modal from '../../components/ui/Modal';
 
@@ -135,7 +136,7 @@ const CoursesPage = () => {
   };
 
   const copyToClipboard = async (course) => {
-    const sharePath = course.websiteUrl ? `/courses/${course.websiteUrl}` : `/courses/${course.id}`;
+    const sharePath = getCoursePath(course);
     const url = `${window.location.origin}${sharePath}`;
 
     try {

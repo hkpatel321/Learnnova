@@ -29,6 +29,27 @@ const authenticate = (req, res, next) => {
   }
 };
 
+const authenticateOptional = (req, _res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.user = null;
+    next();
+    return;
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+  } catch (_err) {
+    req.user = null;
+  }
+
+  next();
+};
+
 /**
  * Role-based authorisation middleware factory.
  * Usage: requireRole('admin', 'instructor')
@@ -46,4 +67,4 @@ const requireRole = (...roles) => {
   };
 };
 
-module.exports = { authenticate, requireRole };
+module.exports = { authenticate, authenticateOptional, requireRole };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resolveMediaUrl } from '../../lib/media';
+import { getCoursePath } from '../../lib/coursePath';
 
 const getCTA = (course, isAuthenticated) => {
   const isEnrolled = !!(course.isEnrolled || course.enrolled || course.enrollment);
@@ -62,7 +63,7 @@ const CourseCard = ({ course, isAuthenticated }) => {
       navigate('/login');
       return;
     }
-    navigate(`/courses/${course.id}`);
+    navigate(getCoursePath(course));
   };
 
   return (

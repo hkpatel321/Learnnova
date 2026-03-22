@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { body, param, query } = require('express-validator');
 const { validate } = require('../middleware/validate');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, authenticateOptional, requireRole } = require('../middleware/auth');
 const { uploadImage } = require('../middleware/upload');
 const { rejectUnknownBodyFields } = require('../middleware/requestSecurity');
 const courseController = require('../controllers/course.controller');
@@ -30,9 +30,18 @@ const isValidCoursePath = (value) => {
 // GET /api/courses/catalog
 router.get(
   '/catalog',
+  authenticateOptional,
   [query('search').optional().isString().trim().isLength({ max: 120 })],
   validate,
   courseController.getCatalog
+);
+
+router.get(
+  '/lookup/:identifier/detail',
+  authenticateOptional,
+  [param('identifier').isString().trim().isLength({ min: 1, max: 200 })],
+  validate,
+  courseController.getCourseDetailByIdentifier
 );
 
 // ── AUTHENTICATED any-role routes ────────────────────────────────

@@ -61,11 +61,7 @@ const AppRouter = () => {
         />
         <Route
           path="/courses/:courseId"
-          element={
-            <ProtectedRoute allowedRoles={['learner', 'instructor', 'admin']}>
-              <CourseDetailPage />
-            </ProtectedRoute>
-          }
+          element={<CourseDetailPage />}
         />
         <Route
           path="/learn/:courseId/:lessonId"

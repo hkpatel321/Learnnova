@@ -38,7 +38,15 @@ const getQuizzesByCourse = async (req, res, next) => {
 
     const quizzes = await prisma.quiz.findMany({
       where: { courseId },
-      include: { _count: { select: { questions: true } } },
+      include: {
+        _count: { select: { questions: true } },
+        questions: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            options: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 

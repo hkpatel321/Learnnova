@@ -12,7 +12,7 @@ const DEFAULT_ATTEMPT_REWARD_RULES = {
 const clampReward = (value, fallback) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric < 0) return fallback;
-  return Math.min(4, Math.round(numeric));
+  return Math.round(numeric);
 };
 
 const getAttemptRewardRules = (quiz) => {
@@ -243,16 +243,12 @@ const submitQuiz = async (req, res, next) => {
 
     const rewardPerCorrect = getRewardPerCorrectAnswer(rewardRules, attemptNumber);
     const currentAttemptScore = correctCount * rewardPerCorrect;
-    const previousBestScore = pastAttempts.reduce((best, attempt) => {
-      const priorReward = getRewardPerCorrectAnswer(rewardRules, attempt.attemptNumber);
-      return Math.max(best, Number(attempt.correctAnswers || 0) * priorReward);
-    }, 0);
 
     // All correct = passed
     const passed = correctCount === totalCount && totalCount > 0;
 
-    // Learners earn only the improvement above their previous best score for this quiz.
-    const pointsEarned = Math.max(0, currentAttemptScore - previousBestScore);
+    // Every attempt awards points using the quiz's per-attempt reward table.
+    const pointsEarned = currentAttemptScore;
 
     // Transaction logic (replaces fn_award_quiz_points and fn_complete_lesson)
     const result = await prisma.$transaction(async (tx) => {
@@ -323,7 +319,6 @@ const submitQuiz = async (req, res, next) => {
         rewardRules,
         rewardPerCorrect,
         scorePoints: currentAttemptScore,
-        previousBestScore,
         answersReview: answersData.map((item) => ({
           questionId: item.questionId,
           questionText: item.questionText,

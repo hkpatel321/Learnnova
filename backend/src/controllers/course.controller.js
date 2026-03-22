@@ -2,6 +2,43 @@ const prisma = require('../config/db');
 const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 const { ensureCourseLearnerLink, hasCourseLearnerLink } = require('../utils/courseLearner');
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeCourseWebsiteUrl = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    const pathSegments = parsed.pathname.split('/').filter(Boolean);
+    return pathSegments[pathSegments.length - 1]?.toLowerCase() || null;
+  } catch {
+    return trimmed.toLowerCase();
+  }
+};
+
+const findCourseByIdentifier = async (identifier, include) => {
+  const normalizedIdentifier = String(identifier || '').trim();
+
+  if (!normalizedIdentifier) return null;
+
+  if (UUID_PATTERN.test(normalizedIdentifier)) {
+    return prisma.course.findUnique({
+      where: { id: normalizedIdentifier },
+      include,
+    });
+  }
+
+  return prisma.course.findFirst({
+    where: { websiteUrl: normalizedIdentifier.toLowerCase() },
+    include,
+  });
+};
+
 const buildCourseSummary = (course) => {
   const lessonCount = course.lessons.length;
   const totalDurationMins = course.lessons.reduce(
@@ -226,6 +263,10 @@ const updateCourse = async (req, res, next) => {
       }
     }
 
+    if (data.websiteUrl !== undefined) {
+      data.websiteUrl = normalizeCourseWebsiteUrl(data.websiteUrl);
+    }
+
     // Validation: cannot remove websiteUrl if course is published
     if (existing.isPublished && data.websiteUrl === null) {
       return res.status(400).json({
@@ -243,6 +284,23 @@ const updateCourse = async (req, res, next) => {
         success: false,
         message: 'Price is required when access rule is payment',
       });
+    }
+
+    if (data.websiteUrl) {
+      const conflictingCourse = await prisma.course.findFirst({
+        where: {
+          websiteUrl: data.websiteUrl,
+          id: { not: existing.id },
+        },
+        select: { id: true },
+      });
+
+      if (conflictingCourse) {
+        return res.status(409).json({
+          success: false,
+          message: 'That website URL is already in use by another course',
+        });
+      }
     }
 
     // Convert price to Decimal if present
@@ -384,6 +442,9 @@ const getCatalog = async (req, res, next) => {
     const { search } = req.query;
 
     const where = { isPublished: true };
+    if (!req.user) {
+      where.visibility = 'everyone';
+    }
     if (search) {
       where.title = { contains: search, mode: 'insensitive' };
     }
@@ -420,6 +481,67 @@ const getCatalog = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+const buildCourseDetailResponse = async ({ course, requester }) => {
+  const { lessonCount, totalDurationMins, reviewCount, avgRating, viewCount } =
+    buildCourseSummary(course);
+
+  const lessons = course.lessons.map((lesson) => ({
+    id: lesson.id,
+    title: lesson.title,
+    type: lesson.lessonType,
+    description: lesson.description,
+    videoUrl: lesson.videoUrl,
+    fileUrl: lesson.fileUrl,
+    durationMinutes: lesson.durationMins || 0,
+    allowDownload: lesson.allowDownload,
+    sortOrder: lesson.sortOrder,
+    quizId: lesson.quiz?.id || null,
+    attachments: lesson.attachments,
+  }));
+
+  let learnerAccess = {
+    isEnrolled: false,
+    isPaid: false,
+    paidAt: null,
+    amountPaid: null,
+    canAccessCourse: false,
+    accessMessage: null,
+  };
+
+  if (requester?.role === 'learner') {
+    const access = await getLearnerCourseAccess(prisma, {
+      userId: requester.id,
+      courseId: course.id,
+    });
+
+    learnerAccess = {
+      isEnrolled: !!access.enrollment,
+      isPaid: !!access.enrollment?.isPaid,
+      paidAt: access.enrollment?.paidAt || null,
+      amountPaid: access.enrollment?.amountPaid || null,
+      canAccessCourse: !!access.ok,
+      accessMessage: access.ok ? null : access.message,
+    };
+  }
+
+  const { reviews, responsible, _count, ...rest } = course;
+
+  return {
+    ...rest,
+    instructor: responsible,
+    lessons,
+    lessonCount,
+    totalDurationMins,
+    reviewCount,
+    avgRating,
+    viewCount,
+    viewsCount: viewCount,
+    requiresPayment: course.accessRule === 'payment',
+    enrolledLearnerCount: _count.learnerLinks,
+    ...learnerAccess,
+  };
 };
 
 // ── 9. getCourseDetail (any authenticated user) ──────────────────
@@ -476,68 +598,87 @@ const getCourseDetail = async (req, res, next) => {
       }
     }
 
-    const { lessonCount, totalDurationMins, reviewCount, avgRating, viewCount } =
-      buildCourseSummary(course);
-
-    // Map lessons to frontend-expected shape
-    const lessons = course.lessons.map((l) => ({
-      id: l.id,
-      title: l.title,
-      type: l.lessonType,
-      description: l.description,
-      videoUrl: l.videoUrl,
-      fileUrl: l.fileUrl,
-      durationMinutes: l.durationMins || 0,
-      allowDownload: l.allowDownload,
-      sortOrder: l.sortOrder,
-      quizId: l.quiz?.id || null,
-      attachments: l.attachments,
-    }));
-
-    let learnerAccess = {
-      isEnrolled: false,
-      isPaid: false,
-      paidAt: null,
-      amountPaid: null,
-      canAccessCourse: false,
-      accessMessage: null,
-    };
-
-    if (req.user?.role === 'learner') {
-      const access = await getLearnerCourseAccess(prisma, {
-        userId: req.user.id,
-        courseId: course.id,
-      });
-
-      learnerAccess = {
-        isEnrolled: !!access.enrollment,
-        isPaid: !!access.enrollment?.isPaid,
-        paidAt: access.enrollment?.paidAt || null,
-        amountPaid: access.enrollment?.amountPaid || null,
-        canAccessCourse: !!access.ok,
-        accessMessage: access.ok ? null : access.message,
-      };
-    }
-
-    const { reviews, responsible, _count, ...rest } = course;
+    const courseData = await buildCourseDetailResponse({
+      course,
+      requester: req.user,
+    });
 
     return res.json({
       success: true,
       data: {
-        course: {
-          ...rest,
-          instructor: responsible,
-          lessons,
-          lessonCount,
-          totalDurationMins,
-          reviewCount,
-          avgRating,
-          viewCount,
-          viewsCount: viewCount,
-          requiresPayment: course.accessRule === 'payment',
-          enrolledLearnerCount: _count.learnerLinks,
-          ...learnerAccess,
+        course: courseData,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getCourseDetailByIdentifier = async (req, res, next) => {
+  try {
+    const course = await findCourseByIdentifier(req.params.identifier, {
+      responsible: { select: { id: true, name: true, avatarUrl: true } },
+      lessons: {
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          attachments: { orderBy: { sortOrder: 'asc' } },
+          quiz: { select: { id: true } },
         },
+      },
+      reviews: { select: { rating: true } },
+      _count: { select: { learnerLinks: true } },
+    });
+
+    if (!course || !course.isPublished) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    if (!req.user && course.visibility === 'signed_in') {
+      return res.status(401).json({
+        success: false,
+        message: 'Sign in to view this course',
+      });
+    }
+
+    if (req.user?.role === 'learner') {
+      const alreadyCounted = await hasCourseLearnerLink(prisma, {
+        userId: req.user.id,
+        courseId: course.id,
+      });
+
+      if (!alreadyCounted) {
+        await prisma.$transaction(async (tx) => {
+          await ensureCourseLearnerLink(tx, {
+            userId: req.user.id,
+            courseId: course.id,
+          });
+
+          await tx.course.update({
+            where: { id: course.id },
+            data: {
+              viewsCount: {
+                increment: 1,
+              },
+            },
+          });
+        });
+
+        course._count.learnerLinks += 1;
+      }
+    }
+
+    const courseData = await buildCourseDetailResponse({
+      course,
+      requester: req.user,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        course: courseData,
       },
     });
   } catch (err) {
@@ -555,5 +696,6 @@ module.exports = {
   uploadCoverImage,
   getCatalog,
   getCourseDetail,
+  getCourseDetailByIdentifier,
 };
 

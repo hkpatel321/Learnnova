@@ -134,11 +134,11 @@ const QuizPlayer = ({ quizId, onComplete }) => {
   }, [quizId]);
 
   useEffect(() => {
-    if (viewState !== 'result' || !resultData?.passed) return;
-    
+    if (viewState !== 'result') return;
+
     const target = Number(resultData.pointsEarned || 0);
     if (target <= 0) return;
-    
+
     const syncTimer = setTimeout(() => {
       setCountUpPoints(0);
       const step = Math.max(1, Math.ceil(target / 20));
@@ -300,14 +300,11 @@ const QuizPlayer = ({ quizId, onComplete }) => {
         totalPoints: Number(data.totalPoints || data.total_points || 0),
         rewardPerCorrect: Number(data.rewardPerCorrect || 0),
         scorePoints: Number(data.scorePoints || 0),
-        previousBestScore: Number(data.previousBestScore || 0),
         attemptedAt,
       });
 
       if (pointsEarned > 0) {
-        toast(`${pointsEarned} points earned! 🏆`, { icon: '⭐', style: { background: '#F59E0B', color: 'black' } });
-      } else if (correct > 0) {
-        toast('You answered correctly, but only new best scores add points.', { icon: '📈' });
+        toast.success(`${pointsEarned} points earned!`);
       }
 
       if (Number.isFinite(Number(data.totalPoints))) {

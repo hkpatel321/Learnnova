@@ -10,6 +10,7 @@ import debounce from 'lodash.debounce';
 import axios from '../../lib/axios';
 import { resolveMediaUrl } from '../../lib/media';
 import { getApiErrorMessage } from '../../lib/apiError';
+import { getCoursePath } from '../../lib/coursePath';
 import useAuthStore from '../../store/authStore';
 
 import Modal from '../../components/ui/Modal';
@@ -121,7 +122,24 @@ const CourseFormPage = () => {
     },
   });
 
+  const { data: attendees = [], isLoading: attendeesLoading } = useQuery({
+    queryKey: ['course-attendees', courseId],
+    enabled: !!courseId,
+    queryFn: async () => {
+      try {
+        const res = await axios.get(`/courses/${courseId}/attendees`);
+        return res.data?.data?.attendees || [];
+      } catch {
+        return [];
+      }
+    },
+  });
+
   const coverImageSrc = resolveMediaUrl(course?.coverImage || course?.coverImageUrl);
+  const previewPath = getCoursePath({
+    id: courseId,
+    websiteUrl: formData.websiteUrl || course?.websiteUrl,
+  });
 
   const availableUsers = useMemo(() => {
     if (user?.role === 'admin') return users;
@@ -278,6 +296,7 @@ const CourseFormPage = () => {
       );
       setIsAddAttendeesOpen(false);
       setAttendeeEmails('');
+      queryClient.invalidateQueries({ queryKey: ['course-attendees', courseId] });
     },
     onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to add attendees'))
   });
@@ -345,7 +364,7 @@ const CourseFormPage = () => {
 
           <div className="flex flex-wrap items-center gap-2 xl:border-l xl:pl-4 xl:border-gray-200">
             <button 
-              onClick={() => window.open(`/courses/${courseId}`, '_blank')}
+              onClick={() => window.open(previewPath, '_blank')}
               className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
               Preview
@@ -552,6 +571,82 @@ const CourseFormPage = () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="px-6 max-w-7xl mx-auto mt-8">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Attendees</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Track who has been enrolled in this course and how far they have progressed.
+              </p>
+            </div>
+            <div className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">
+              {attendees.length} attendee{attendees.length === 1 ? '' : 's'}
+            </div>
+          </div>
+
+          {attendeesLoading ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, idx) => (
+                <div key={idx} className="rounded-xl border border-gray-200 p-4 animate-pulse">
+                  <div className="h-4 w-32 rounded bg-gray-200" />
+                  <div className="mt-2 h-3 w-48 rounded bg-gray-200" />
+                  <div className="mt-4 h-2 w-full rounded bg-gray-200" />
+                </div>
+              ))}
+            </div>
+          ) : attendees.length === 0 ? (
+            <div className="mt-5 rounded-xl border-2 border-dashed border-gray-200 px-6 py-14 text-center text-sm text-gray-400">
+              No attendees yet. Invite learners to start filling this course roster.
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {attendees.map((attendee) => {
+                const completionPct = Number(attendee.completion_pct || 0);
+                const statusLabel =
+                  attendee.status === 'completed'
+                    ? 'Completed'
+                    : attendee.status === 'in_progress'
+                      ? 'In Progress'
+                      : 'Yet to Start';
+
+                return (
+                  <div key={`${attendee.email}-${attendee.enrolled_at || attendee.name}`} className="rounded-xl border border-gray-200 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900">{attendee.name || 'Learner'}</p>
+                        <p className="truncate text-sm text-gray-500">{attendee.email || 'No email'}</p>
+                      </div>
+                      <span className="rounded-full bg-[#EEF0FF] px-2.5 py-1 text-xs font-medium text-[#2D31D4]">
+                        {statusLabel}
+                      </span>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>Progress</span>
+                        <span>{completionPct}%</span>
+                      </div>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                        <div className="h-full bg-[#2D31D4]" style={{ width: `${Math.max(0, Math.min(100, completionPct))}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500">
+                      <span>
+                        Enrolled:{' '}
+                        {attendee.enrolled_at ? new Date(attendee.enrolled_at).toLocaleDateString('en-US') : '-'}
+                      </span>
+                      <span>Time spent: {attendee.time_spent_mins || 0} min</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

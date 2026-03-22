@@ -5,6 +5,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Loader2, Search, Star, Trash2, X, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from '../../lib/axios';
+import { getCoursePath } from '../../lib/coursePath';
 import useAuthStore from '../../store/authStore';
 
 const EMPTY_ARRAY = [];
@@ -157,7 +158,7 @@ export default function CourseDetailPage() {
   const { data: course, isLoading: courseLoading } = useQuery({
     queryKey: ['course-detail', courseId, authScope],
     queryFn: async () => {
-      const res = await axios.get(`/courses/${courseId}/detail`);
+      const res = await axios.get(`/courses/lookup/${encodeURIComponent(courseId)}/detail`);
       const courseData = res.data?.data?.course || res.data?.course || res.data;
       if (courseData) {
         courseData.published = courseData.isPublished;
@@ -167,29 +168,33 @@ export default function CourseDetailPage() {
     },
   });
 
+  const canonicalCourseId = course?.id || null;
+  const canonicalCoursePath = course ? getCoursePath(course) : `/courses/${courseId}`;
+
   const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
-    queryKey: ['course-reviews', courseId],
+    queryKey: ['course-reviews', canonicalCourseId],
     queryFn: async () => {
-      const res = await axios.get(`/courses/${courseId}/reviews`);
+      const res = await axios.get(`/courses/${canonicalCourseId}/reviews`);
       return Array.isArray(res.data?.data?.reviews) ? res.data.data.reviews : Array.isArray(res.data) ? res.data : res.data?.reviews || [];
     },
+    enabled: !!canonicalCourseId,
   });
 
   const { data: progress } = useQuery({
-    queryKey: ['course-progress', courseId, authScope],
+    queryKey: ['course-progress', canonicalCourseId, authScope],
     queryFn: async () => {
-      const res = await axios.get(`/progress/courses/${courseId}`);
+      const res = await axios.get(`/progress/courses/${canonicalCourseId}`);
       return res.data?.data || res.data;
     },
-    enabled: isAuthenticated && isLearner,
+    enabled: isAuthenticated && isLearner && !!canonicalCourseId,
     retry: false,
   });
 
   const submitReviewMutation = useMutation({
-    mutationFn: async (payload) => axios.post(`/courses/${courseId}/reviews`, payload),
+    mutationFn: async (payload) => axios.post(`/courses/${canonicalCourseId}/reviews`, payload),
     onSuccess: () => {
       toast.success('Review posted! Thank you ⭐');
-      queryClient.invalidateQueries({ queryKey: ['course-reviews', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['course-reviews', canonicalCourseId] });
       setShowReviewModal(false);
     },
     onError: (error) => {
@@ -199,11 +204,11 @@ export default function CourseDetailPage() {
   });
 
   const deleteReviewMutation = useMutation({
-    mutationFn: async (reviewId) => axios.delete(`/courses/${courseId}/reviews/${reviewId}`),
+    mutationFn: async (reviewId) => axios.delete(`/courses/${canonicalCourseId}/reviews/${reviewId}`),
     onSuccess: async () => {
       toast.success('Review deleted');
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['course-reviews', courseId] }),
+        queryClient.invalidateQueries({ queryKey: ['course-reviews', canonicalCourseId] }),
         queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
       ]);
       setDeletingReviewId(null);
@@ -217,12 +222,12 @@ export default function CourseDetailPage() {
 
   const enrollMutation = useMutation({
     mutationFn: async () => {
-      const res = await axios.post(`/courses/${courseId}/enroll`);
+      const res = await axios.post(`/courses/${canonicalCourseId}/enroll`);
       return res.data?.data?.enrollment || res.data?.enrollment;
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+        queryClient.invalidateQueries({ queryKey: ['course-progress', canonicalCourseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
       ]);
@@ -231,13 +236,13 @@ export default function CourseDetailPage() {
 
   const verifyPaymentMutation = useMutation({
     mutationFn: async (payload) => {
-      const res = await axios.post(`/courses/${courseId}/payment/verify`, payload);
+      const res = await axios.post(`/courses/${canonicalCourseId}/payment/verify`, payload);
       return res.data?.data || res.data;
     },
     onSuccess: async () => {
       setOptimisticPaymentState({ courseId, authScope, unlocked: true });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+        queryClient.invalidateQueries({ queryKey: ['course-progress', canonicalCourseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
         queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
         queryClient.invalidateQueries({ queryKey: ['my-payments'] }),
@@ -252,7 +257,7 @@ export default function CourseDetailPage() {
 
   const createPaymentOrderMutation = useMutation({
     mutationFn: async () => {
-      const res = await axios.post(`/courses/${courseId}/payment/order`);
+      const res = await axios.post(`/courses/${canonicalCourseId}/payment/order`);
       return res.data?.data || res.data;
     },
   });
@@ -262,7 +267,7 @@ export default function CourseDetailPage() {
 
     if (stripeStatus === 'cancelled') {
       toast('Checkout was cancelled', { icon: '💳' });
-      navigate(`/courses/${courseId}`, { replace: true });
+      navigate(canonicalCoursePath, { replace: true });
       return;
     }
 
@@ -281,11 +286,12 @@ export default function CourseDetailPage() {
       { sessionId: stripeSessionId },
       {
         onSettled: () => {
-          navigate(`/courses/${courseId}`, { replace: true });
+          navigate(canonicalCoursePath, { replace: true });
         },
       }
     );
   }, [
+    canonicalCoursePath,
     courseId,
     isAuthenticated,
     isLearner,
@@ -403,12 +409,12 @@ export default function CourseDetailPage() {
       toast(accessMessage, { icon: '🔒' });
       return;
     }
-    navigate(`/learn/${courseId}/${lesson.id}`);
+    navigate(`/learn/${canonicalCourseId}/${lesson.id}`);
   };
 
   const openFirstLesson = () => {
     if (lessons[0]?.id) {
-      navigate(`/learn/${courseId}/${lessons[0].id}`);
+      navigate(`/learn/${canonicalCourseId}/${lessons[0].id}`);
       return true;
     }
     return false;
@@ -432,7 +438,7 @@ export default function CourseDetailPage() {
       if (orderData?.alreadyPaid) {
         setOptimisticPaymentState({ courseId, authScope, unlocked: true });
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['course-progress', courseId, authScope] }),
+          queryClient.invalidateQueries({ queryKey: ['course-progress', canonicalCourseId, authScope] }),
           queryClient.invalidateQueries({ queryKey: ['course-detail', courseId, authScope] }),
           queryClient.invalidateQueries({ queryKey: ['my-courses'] }),
         ]);
@@ -455,6 +461,11 @@ export default function CourseDetailPage() {
   };
 
   const handlePrimaryAction = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+
     if (!isLearner) {
       toast('Preview mode for instructors and admins', { icon: '👁️' });
       return;
@@ -526,7 +537,7 @@ export default function CourseDetailPage() {
               className={`mt-6 h-12 w-48 rounded-lg font-semibold disabled:opacity-70 ${isLearner ? cta.className : 'bg-white text-[#2D31D4]'}`}
               onClick={handlePrimaryAction}
             >
-              {isBusy ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : isLearner ? cta.label : 'Preview Mode'}
+              {isBusy ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : !isAuthenticated ? 'Sign In to Join' : isLearner ? cta.label : 'Preview Mode'}
             </button>
             {requiresPayment && !canAccessCourse ? (
               <p className="mt-3 max-w-md text-xs text-white/80">
