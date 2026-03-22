@@ -140,6 +140,7 @@ export default function LessonPlayerPage() {
     mutationFn: async (id) => axios.post(`/progress/lessons/${id}/complete`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-progress', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['activity-heatmap'] });
     },
     onError: () => toast.error('Failed to update lesson progress'),
   });
@@ -157,6 +158,9 @@ export default function LessonPlayerPage() {
 
   const trackActivityMutation = useMutation({
     mutationFn: async (payload) => axios.post('/users/me/activity-events', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-heatmap'] });
+    },
   });
 
   const addTimeSpentMutation = useMutation({
@@ -198,7 +202,7 @@ export default function LessonPlayerPage() {
     'Course';
 
   const recordActivity = useCallback((activityType, extra = {}) => {
-    const activityKey = `${lessonId}:${activityType}:${extra.scope || 'default'}`;
+    const activityKey = `${lessonId}:${activityType}`;
     if (extra.once && trackedActivityRef.current[activityKey]) {
       return;
     }
@@ -471,12 +475,6 @@ export default function LessonPlayerPage() {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         referrerPolicy="strict-origin-when-cross-origin"
                         allowFullScreen
-                        onLoad={() => {
-                          recordActivity('video_watch', {
-                            once: true,
-                            scope: 'youtube-ready',
-                          });
-                        }}
                       />
                     ) : (
                       <ReactPlayer
@@ -485,18 +483,8 @@ export default function LessonPlayerPage() {
                         height="100%"
                         controls
                         playsInline
-                        onReady={() => {
-                          recordActivity('video_watch', {
-                            once: true,
-                            scope: 'ready',
-                          });
-                        }}
                         onPlay={() => {
                           setPlayingVideoLessonId(lessonId);
-                          recordActivity('video_watch', {
-                            once: true,
-                            scope: 'play',
-                          });
                         }}
                         onPause={() => setPlayingVideoLessonId(null)}
                         onEnded={() => setPlayingVideoLessonId(null)}
