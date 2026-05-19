@@ -23,9 +23,6 @@ app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use(enforceRequestSafety);
 
 
-const path = require('path');
-const uploadsDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, 'uploads');
-app.use('/uploads', express.static(uploadsDir));
 
 
 app.get('/api/health', (_req, res) => {
