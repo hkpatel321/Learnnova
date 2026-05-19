@@ -4,7 +4,7 @@ export const resolveMediaUrl = (value) => {
 
   if (!raw || raw === 'null' || raw === 'undefined') return '';
 
-  if (/^https?:\/\
+  if (/^https?:\/\//i.test(raw)) {
     return raw;
   }
 

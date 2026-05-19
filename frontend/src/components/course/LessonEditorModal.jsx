@@ -631,20 +631,99 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                 {form.type === 'image' && (
                   <div className="space-y-4">
                     <Dropzone
-                      accept="image*"
+                      accept="image/*"
+                      onFileChange={(file) => setForm((prev) => ({ ...prev, imageFile: file }))}
+                      icon={<ImageIcon className="w-6 h-6" />}
+                      title="Drag & drop or click to upload image"
+                    />
+                    {form.imageFile ? (
+                      <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-green-800">{form.imageFile.name}</p>
+                          <p className="text-green-700">{formatFileSize(form.imageFile.size)}</p>
+                        </div>
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                      </div>
+                    ) : lesson?.fileUrl ? (
+                      <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                        Existing image attached. Upload a new file only if you want to replace it.
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {form.type === 'quiz' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Quiz</label>
+                    <select
+                      value={form.quizId}
+                      onChange={(e) => setForm((prev) => ({ ...prev, quizId: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#2D31D4] bg-white"
+                    >
+                      <option value="">Select a quiz from this course...</option>
+                      {quizzes.map((quiz) => (
+                        <option key={quiz.id} value={quiz.id}>{quiz.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'description' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="What is this lesson about?"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-[#2D31D4] min-h-[160px]"
+                />
+              </div>
+            )}
+
+            {activeTab === 'attachments' && (
+              <div className="space-y-6">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">Add Resource</h4>
+                  <div className="flex rounded-lg border border-gray-200 p-1 mb-4 bg-gray-50/50 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentMode('upload')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        attachmentMode === 'upload' ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Upload File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentMode('link')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        attachmentMode === 'link' ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      External Link
+                    </button>
+                  </div>
+
+                  {attachmentMode === 'upload' ? (
+                    <>
+                      <Dropzone
+                        accept="*"
                         onFileChange={setNewAttachmentFile}
                         icon={<Upload className="w-6 h-6" />}
                         title="Drag & drop or click to upload"
                       />
                       {newAttachmentFile ? (
-                        <p className="text-xs text-gray-600">{newAttachmentFile.name} ({formatFileSize(newAttachmentFile.size)})</p>
+                        <p className="text-xs text-gray-600 mt-2">{newAttachmentFile.name} ({formatFileSize(newAttachmentFile.size)})</p>
                       ) : null}
                       <input
                         type="text"
                         value={newAttachmentLabel}
                         onChange={(e) => setNewAttachmentLabel(e.target.value)}
                         placeholder="What to call it"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#2D31D4]"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#2D31D4] mt-3"
                       />
                     </>
                   ) : (
@@ -673,11 +752,11 @@ const LessonEditorModal = ({ open, onOpenChange, courseId, lesson, onSaved }) =>
                     type="button"
                     onClick={() => addAttachmentMutation.mutate()}
                     disabled={addAttachmentMutation.isPending || !lesson?.id}
-                    className="rounded-lg border border-dashed border-[#2D31D4] text-[#2D31D4] px-4 py-2 text-sm font-medium hover:bg-[#EEF0FF] disabled:opacity-50"
+                    className="rounded-lg border border-dashed border-[#2D31D4] text-[#2D31D4] px-4 py-2 text-sm font-medium hover:bg-[#EEF0FF] disabled:opacity-50 mt-4 block"
                   >
                     + Add Attachment
                   </button>
-                  {!lesson?.id ? <p className="text-xs text-gray-500">Save lesson first to add attachments.</p> : null}
+                  {!lesson?.id ? <p className="text-xs text-gray-500 mt-2">Save lesson first to add attachments.</p> : null}
                 </div>
               </div>
             )}

@@ -397,7 +397,24 @@ const CourseFormPage = () => {
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept="image}
+            accept="image/*"
+            onChange={handleImageUpload}
+          />
+          {course?.coverImage ? (
+            <img 
+              src={coverImageSrc} 
+              alt="Course cover" 
+              className="w-full h-full object-cover" 
+              onError={() => setCoverLoadFailed(true)}
+            />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <Upload className="w-8 h-8 text-[#2D31D4]/60 mb-2 group-hover:scale-110 transition-transform" />
+              <span className="text-sm font-medium text-[#2D31D4]/80">Upload Cover Image (16:9)</span>
+            </div>
+          )}
+        </div>
+      </div>
       <div className="px-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-6">
         {}
         <div className="space-y-6">
