@@ -1,50 +1,32 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('../config/cloudinary');
 
-const uploadsDir = process.env.NODE_ENV === 'production' 
-  ? '/tmp' 
-  : path.resolve(__dirname, '../../uploads');
-
-if (process.env.NODE_ENV !== 'production' && !fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${uuidv4()}${ext}`);
+const imageStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'learnova/images',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+    transformation: [{ quality: 'auto', fetch_format: 'auto' }],
   },
 });
 
-
-const imageFilter = (_req, file, cb) => {
-  const allowed = /jpeg|jpg|png|gif|webp|svg/;
-  const extOk = allowed.test(path.extname(file.originalname).toLowerCase());
-  const mimeOk = allowed.test(file.mimetype.split('/')[1]);
-
-  if (extOk && mimeOk) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed'), false);
-  }
-};
-
-
 const uploadImage = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, 
-  fileFilter: imageFilter,
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const fileStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'learnova/files',
+    resource_type: 'raw',
+  },
 });
 
 const uploadAny = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, 
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-module.exports = { uploadImage, uploadAny };
+module.exports = { uploadImage, uploadAny, cloudinary };
