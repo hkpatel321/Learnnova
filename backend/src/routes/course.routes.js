@@ -25,9 +25,9 @@ const isValidCoursePath = (value) => {
   }
 };
 
-// ── PUBLIC routes (no auth) ──────────────────────────────────────
 
-// GET /api/courses/catalog
+
+
 router.get(
   '/catalog',
   authenticateOptional,
@@ -44,9 +44,9 @@ router.get(
   courseController.getCourseDetailByIdentifier
 );
 
-// ── AUTHENTICATED any-role routes ────────────────────────────────
 
-// GET /api/courses/:id/detail  (any authenticated user — learner, instructor, admin)
+
+
 router.get(
   '/:id/detail',
   authenticate,
@@ -55,7 +55,7 @@ router.get(
   courseController.getCourseDetail
 );
 
-// ── POST /api/courses ────────────────────────────────────────────
+
 router.post(
   '/',
   authenticate,
@@ -71,7 +71,7 @@ router.post(
   courseController.createCourse
 );
 
-// ── GET /api/courses ─────────────────────────────────────────────
+
 router.get(
   '/',
   authenticate,
@@ -85,7 +85,7 @@ router.get(
   courseController.getAllCourses
 );
 
-// ── GET /api/courses/:id ─────────────────────────────────────────
+
 router.get(
   '/:id',
   authenticate,
@@ -95,7 +95,7 @@ router.get(
   courseController.getCourseById
 );
 
-// ── PUT /api/courses/:id ─────────────────────────────────────────
+
 router.put(
   '/:id',
   authenticate,
@@ -131,7 +131,7 @@ router.put(
   courseController.updateCourse
 );
 
-// ── PATCH /api/courses/:id/publish ───────────────────────────────
+
 router.patch(
   '/:id/publish',
   authenticate,
@@ -141,7 +141,7 @@ router.patch(
   courseController.togglePublish
 );
 
-// ── DELETE /api/courses/:id ──────────────────────────────────────
+
 router.delete(
   '/:id',
   authenticate,
@@ -151,7 +151,7 @@ router.delete(
   courseController.deleteCourse
 );
 
-// ── POST /api/courses/:id/cover ──────────────────────────────────
+
 router.post(
   '/:id/cover',
   authenticate,

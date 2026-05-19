@@ -60,7 +60,7 @@ const mapAttemptSummary = (attempt, rewardRules) => {
   };
 };
 
-// ── 3. getQuizForPlayer ──────────────────────────────────────────
+
 
 const getQuizForPlayer = async (req, res, next) => {
   try {
@@ -74,7 +74,7 @@ const getQuizForPlayer = async (req, res, next) => {
           orderBy: { sortOrder: 'asc' },
           include: {
             options: {
-              select: { id: true, optionText: true, sortOrder: true }, // NO is_correct
+              select: { id: true, optionText: true, sortOrder: true }, 
               orderBy: { sortOrder: 'asc' },
             },
           },
@@ -121,12 +121,12 @@ const getQuizForPlayer = async (req, res, next) => {
   }
 };
 
-// ── 4. submitQuiz ────────────────────────────────────────────────
+
 
 const submitQuiz = async (req, res, next) => {
   try {
     const { quizId } = req.params;
-    const { answers } = req.body; // [{ questionId, selectedOptionId }]
+    const { answers } = req.body; 
     const userId = req.user.id;
 
     if (!Array.isArray(answers)) {
@@ -173,7 +173,7 @@ const submitQuiz = async (req, res, next) => {
     let correctCount = 0;
     const totalCount = quiz.questions.length;
 
-    // Map correct options for fast lookup
+    
     const correctOptionsMap = {};
     const validQuestionIds = new Set();
     const validOptionsByQuestion = new Map();
@@ -197,7 +197,7 @@ const submitQuiz = async (req, res, next) => {
       });
     }
 
-    // Process user's answers
+    
     const answersData = [];
     const seenQuestionIds = new Set();
     for (const ans of answers) {
@@ -244,15 +244,15 @@ const submitQuiz = async (req, res, next) => {
     const rewardPerCorrect = getRewardPerCorrectAnswer(rewardRules, attemptNumber);
     const currentAttemptScore = correctCount * rewardPerCorrect;
 
-    // All correct = passed
+    
     const passed = correctCount === totalCount && totalCount > 0;
 
-    // Every attempt awards points using the quiz's per-attempt reward table.
+    
     const pointsEarned = currentAttemptScore;
 
-    // Transaction logic (replaces fn_award_quiz_points and fn_complete_lesson)
+    
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create quiz attempt
+      
       const attempt = await tx.quizAttempt.create({
         data: {
           userId,
@@ -273,7 +273,7 @@ const submitQuiz = async (req, res, next) => {
         },
       });
 
-      // 2. Award points to user if any
+      
       let newTotalPoints = 0;
       if (pointsEarned > 0) {
         const user = await tx.user.update({
@@ -286,7 +286,7 @@ const submitQuiz = async (req, res, next) => {
         newTotalPoints = user.totalPoints;
       }
 
-      // 3. Complete lesson if associated lesson exists and user passed
+      
       if (passed && quiz.lessonId) {
         await tx.lessonProgress.upsert({
           where: { userId_lessonId: { userId, lessonId: quiz.lessonId } },
@@ -333,14 +333,14 @@ const submitQuiz = async (req, res, next) => {
   }
 };
 
-// ── 5. getQuizAttemptHistory ─────────────────────────────────────
+
 
 const getQuizAttemptHistory = async (req, res, next) => {
   try {
     const { quizId } = req.params;
     const userId = req.user.id;
 
-    // Verify enrollment
+    
     const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
     if (!quiz) {
       return res.status(404).json({ success: false, message: 'Quiz not found' });

@@ -2,7 +2,7 @@ const { Router } = require('express');
 
 const router = Router();
 
-// ── Mount feature routers below ──────────────────────────────────
+
 const authRoutes = require('./auth.routes');
 router.use('/auth', authRoutes);
 

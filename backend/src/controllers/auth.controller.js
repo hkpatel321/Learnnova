@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/db');
 const { sendPasswordResetEmail } = require('../utils/mailer');
 
-// ── helpers ──────────────────────────────────────────────────────
+
 
 const generateAccessToken = (user) =>
   jwt.sign(
@@ -25,19 +25,19 @@ const PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
 const hashResetToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex');
 
-/** Return user object without passwordHash */
+
 const sanitiseUser = (user) => {
   const { passwordHash, ...safe } = user;
   return safe;
 };
 
-// ── controllers ──────────────────────────────────────────────────
+
 
 const register = async (req, res, next) => {
   try {
     const { name, email, password, role } = req.body;
 
-    // Block admin self-registration
+    
     if (role === 'admin') {
       return res.status(400).json({
         success: false,
@@ -45,7 +45,7 @@ const register = async (req, res, next) => {
       });
     }
 
-    // Check duplicate email
+    
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return res.status(409).json({
@@ -54,10 +54,10 @@ const register = async (req, res, next) => {
       });
     }
 
-    // Hash password
+    
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
+    
     const newUser = await prisma.user.create({
       data: {
         name,

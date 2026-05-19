@@ -8,10 +8,10 @@ const lessonController = require('../controllers/lesson.controller');
 
 const router = Router();
 
-// All lesson routes require authentication
+
 router.use(authenticate);
 
-// ── Nested under /api/courses/:courseId/lessons ───────────────────
+
 
 router.get(
   '/courses/:courseId/lessons',
@@ -74,7 +74,7 @@ router.patch(
   lessonController.reorderLessons
 );
 
-// ── Standalone lesson routes (/api/lessons/:id) ──────────────────
+
 
 router.get(
   '/lessons/:id',
@@ -118,7 +118,7 @@ router.delete(
   lessonController.deleteLesson
 );
 
-// ── Attachment routes ────────────────────────────────────────────
+
 
 router.post(
   '/lessons/:id/attachments',

@@ -1,10 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-/**
- * JWT verification middleware.
- * Expects header: Authorization: Bearer <token>
- * On success, attaches { id, email, role } to req.user.
- */
+
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -50,10 +46,7 @@ const authenticateOptional = (req, _res, next) => {
   next();
 };
 
-/**
- * Role-based authorisation middleware factory.
- * Usage: requireRole('admin', 'instructor')
- */
+
 const requireRole = (...roles) => {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {

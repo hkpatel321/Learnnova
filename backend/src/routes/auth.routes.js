@@ -7,7 +7,7 @@ const authController = require('../controllers/auth.controller');
 
 const router = Router();
 
-// ── POST /api/auth/register ──────────────────────────────────────
+
 router.post(
   '/register',
   rejectUnknownBodyFields(['name', 'email', 'password', 'role']),
@@ -31,7 +31,7 @@ router.post(
   authController.register
 );
 
-// ── POST /api/auth/login ─────────────────────────────────────────
+
 router.post(
   '/login',
   rejectUnknownBodyFields(['email', 'password']),
@@ -77,13 +77,13 @@ router.post(
   authController.resetPassword
 );
 
-// ── POST /api/auth/refresh ───────────────────────────────────────
+
 router.post('/refresh', authController.refreshToken);
 
-// ── GET  /api/auth/me ────────────────────────────────────────────
+
 router.get('/me', authenticate, authController.getMe);
 
-// ── POST /api/auth/logout ────────────────────────────────────────
+
 router.post('/logout', authenticate, authController.logout);
 
 module.exports = router;

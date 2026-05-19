@@ -45,7 +45,7 @@ export default function CourseCatalogPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Hero */}
+      {}
       <div className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold font-plus-jakarta-sans text-gray-900">
           Explore Courses
@@ -55,7 +55,7 @@ export default function CourseCatalogPage() {
         </p>
       </div>
 
-      {/* Search */}
+      {}
       <div className="mb-8">
         <div className="relative max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -71,7 +71,7 @@ export default function CourseCatalogPage() {
         </div>
       </div>
 
-      {/* Results */}
+      {}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {Array.from({ length: 6 }).map((_, i) => (

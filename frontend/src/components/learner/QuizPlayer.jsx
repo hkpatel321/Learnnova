@@ -205,7 +205,7 @@ const QuizPlayer = ({ quizId, onComplete }) => {
     try {
       await document.exitFullscreen();
     } catch {
-      // Ignore exit failures and let the browser settle naturally.
+      
     }
   };
 

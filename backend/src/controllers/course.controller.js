@@ -63,9 +63,9 @@ const buildCourseSummary = (course) => {
   };
 };
 
-// ── helpers ──────────────────────────────────────────────────────
 
-/** Fetch a course with aggregated lesson stats + responsible name */
+
+
 const courseWithStats = async (courseId) => {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
@@ -96,7 +96,7 @@ const courseWithStats = async (courseId) => {
   };
 };
 
-// ── 1. createCourse ──────────────────────────────────────────────
+
 
 const createCourse = async (req, res, next) => {
   try {
@@ -118,7 +118,7 @@ const createCourse = async (req, res, next) => {
   }
 };
 
-// ── 2. getAllCourses ──────────────────────────────────────────────
+
 
 const getAllCourses = async (req, res, next) => {
   try {
@@ -127,15 +127,15 @@ const getAllCourses = async (req, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 8)));
     const skip = (page - 1) * pageSize;
 
-    // Build where clause
+    
     const where = {};
 
-    // Instructors see only their own courses
+    
     if (req.user.role === 'instructor') {
       where.responsibleId = req.user.id;
     }
 
-    // Optional title search (case-insensitive)
+    
     if (search) {
       where.title = { contains: search, mode: 'insensitive' };
     }
@@ -155,7 +155,7 @@ const getAllCourses = async (req, res, next) => {
       prisma.course.count({ where }),
     ]);
 
-    // Map to flatten and add aggregated fields
+    
     const data = courses.map((c) => {
       const lessonCount = c.lessons.length;
       const totalDurationMins = c.lessons.reduce(
@@ -193,7 +193,7 @@ const getAllCourses = async (req, res, next) => {
   }
 };
 
-// ── 3. getCourseById ─────────────────────────────────────────────
+
 
 const getCourseById = async (req, res, next) => {
   try {
@@ -206,7 +206,7 @@ const getCourseById = async (req, res, next) => {
       });
     }
 
-    // Instructors can only view their own courses
+    
     if (req.user.role === 'instructor' && course.responsibleId !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -220,7 +220,7 @@ const getCourseById = async (req, res, next) => {
   }
 };
 
-// ── 4. updateCourse ──────────────────────────────────────────────
+
 
 const updateCourse = async (req, res, next) => {
   try {
@@ -235,7 +235,7 @@ const updateCourse = async (req, res, next) => {
       });
     }
 
-    // Instructors can only update their own courses
+    
     if (req.user.role === 'instructor' && existing.responsibleId !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -243,7 +243,7 @@ const updateCourse = async (req, res, next) => {
       });
     }
 
-    // Pick only allowed fields from body
+    
     const allowedFields = [
       'title',
       'shortDesc',
@@ -267,7 +267,7 @@ const updateCourse = async (req, res, next) => {
       data.websiteUrl = normalizeCourseWebsiteUrl(data.websiteUrl);
     }
 
-    // Validation: cannot remove websiteUrl if course is published
+    
     if (existing.isPublished && data.websiteUrl === null) {
       return res.status(400).json({
         success: false,
@@ -275,7 +275,7 @@ const updateCourse = async (req, res, next) => {
       });
     }
 
-    // Validation: payment access rule requires a price
+    
     const effectiveAccessRule = data.accessRule || existing.accessRule;
     const effectivePrice = data.price !== undefined ? data.price : existing.price;
 
@@ -303,7 +303,7 @@ const updateCourse = async (req, res, next) => {
       }
     }
 
-    // Convert price to Decimal if present
+    
     if (data.price !== undefined && data.price !== null) {
       data.price = parseFloat(data.price);
     }
@@ -319,7 +319,7 @@ const updateCourse = async (req, res, next) => {
   }
 };
 
-// ── 5. togglePublish ─────────────────────────────────────────────
+
 
 const togglePublish = async (req, res, next) => {
   try {
@@ -334,7 +334,7 @@ const togglePublish = async (req, res, next) => {
       });
     }
 
-    // Instructors can only toggle their own courses
+    
     if (req.user.role === 'instructor' && existing.responsibleId !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -344,7 +344,7 @@ const togglePublish = async (req, res, next) => {
 
     const willPublish = !existing.isPublished;
 
-    // Cannot publish without a website URL
+    
     if (willPublish && !existing.websiteUrl) {
       return res.status(400).json({
         success: false,
@@ -366,7 +366,7 @@ const togglePublish = async (req, res, next) => {
   }
 };
 
-// ── 6. deleteCourse ──────────────────────────────────────────────
+
 
 const deleteCourse = async (req, res, next) => {
   try {
@@ -389,7 +389,7 @@ const deleteCourse = async (req, res, next) => {
   }
 };
 
-// ── 7. uploadCoverImage ──────────────────────────────────────────
+
 
 const uploadCoverImage = async (req, res, next) => {
   try {
@@ -411,7 +411,7 @@ const uploadCoverImage = async (req, res, next) => {
       });
     }
 
-    // Instructors can only update their own courses
+    
     if (req.user.role === 'instructor' && existing.responsibleId !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -435,7 +435,7 @@ const uploadCoverImage = async (req, res, next) => {
   }
 };
 
-// ── 8. getCatalog (public — published courses) ──────────────────
+
 
 const getCatalog = async (req, res, next) => {
   try {
@@ -544,7 +544,7 @@ const buildCourseDetailResponse = async ({ course, requester }) => {
   };
 };
 
-// ── 9. getCourseDetail (any authenticated user) ──────────────────
+
 
 const getCourseDetail = async (req, res, next) => {
   try {

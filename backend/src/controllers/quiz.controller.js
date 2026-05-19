@@ -1,8 +1,8 @@
 const prisma = require('../config/db');
 
-// ── helpers ──────────────────────────────────────────────────────
 
-/** Verify course access for quiz operations */
+
+
 const verifyCourseAccess = async (courseId, user) => {
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course) return { error: 'Course not found', status: 404 };
@@ -12,7 +12,7 @@ const verifyCourseAccess = async (courseId, user) => {
   return { course };
 };
 
-/** Verify quiz access by checking quiz → course ownership */
+
 const verifyQuizAccess = async (quizId, user) => {
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
@@ -25,7 +25,7 @@ const verifyQuizAccess = async (quizId, user) => {
   return { quiz };
 };
 
-// ── 1. getQuizzesByCourse ────────────────────────────────────────
+
 
 const getQuizzesByCourse = async (req, res, next) => {
   try {
@@ -61,7 +61,7 @@ const getQuizzesByCourse = async (req, res, next) => {
   }
 };
 
-// ── 2. createQuiz ────────────────────────────────────────────────
+
 
 const createQuiz = async (req, res, next) => {
   try {
@@ -99,7 +99,7 @@ const createQuiz = async (req, res, next) => {
   }
 };
 
-// ── 3. updateQuiz ────────────────────────────────────────────────
+
 
 const updateQuiz = async (req, res, next) => {
   try {
@@ -135,7 +135,7 @@ const updateQuiz = async (req, res, next) => {
   }
 };
 
-// ── 4. deleteQuiz ────────────────────────────────────────────────
+
 
 const deleteQuiz = async (req, res, next) => {
   try {
@@ -152,7 +152,7 @@ const deleteQuiz = async (req, res, next) => {
   }
 };
 
-// ── 5. getQuizWithQuestions ──────────────────────────────────────
+
 
 const getQuizWithQuestions = async (req, res, next) => {
   try {
@@ -173,12 +173,12 @@ const getQuizWithQuestions = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Quiz not found' });
     }
 
-    // Determine whether to reveal correct answers
+    
     const isOwnerOrAdmin =
       req.user.role === 'admin' ||
       (req.user.role === 'instructor' && quiz.course.responsibleId === req.user.id);
 
-    // Strip is_correct from options for learners
+    
     const questions = quiz.questions.map((q) => ({
       ...q,
       options: q.options.map((o) => {
@@ -199,7 +199,7 @@ const getQuizWithQuestions = async (req, res, next) => {
   }
 };
 
-// ── 6. addQuestion ───────────────────────────────────────────────
+
 
 const addQuestion = async (req, res, next) => {
   try {
@@ -214,7 +214,7 @@ const addQuestion = async (req, res, next) => {
       { optionText: 'Option 2', isCorrect: false }
     ];
 
-    // Validate options
+    
     if (!Array.isArray(options) || options.length < 2) {
       return res.status(400).json({
         success: false,
@@ -230,14 +230,14 @@ const addQuestion = async (req, res, next) => {
       });
     }
 
-    // Auto sort_order
+    
     const maxSort = await prisma.quizQuestion.aggregate({
       where: { quizId: req.params.id },
       _max: { sortOrder: true },
     });
     const sortOrder = (maxSort._max.sortOrder ?? 0) + 1;
 
-    // Create question with nested options
+    
     const question = await prisma.quizQuestion.create({
       data: {
         quizId: req.params.id,
@@ -262,7 +262,7 @@ const addQuestion = async (req, res, next) => {
   }
 };
 
-// ── 7. updateQuestion ────────────────────────────────────────────
+
 
 const updateQuestion = async (req, res, next) => {
   try {
@@ -284,7 +284,7 @@ const updateQuestion = async (req, res, next) => {
 
     const { questionText, options } = req.body;
 
-    // Validate new options if provided
+    
     if (options) {
       if (!Array.isArray(options) || options.length < 2) {
         return res.status(400).json({
@@ -302,9 +302,9 @@ const updateQuestion = async (req, res, next) => {
       }
     }
 
-    // Transaction: update question text + replace all options
+    
     const updated = await prisma.$transaction(async (tx) => {
-      // Update question text if provided
+      
       if (questionText) {
         await tx.quizQuestion.update({
           where: { id: req.params.id },
@@ -312,7 +312,7 @@ const updateQuestion = async (req, res, next) => {
         });
       }
 
-      // Replace options if provided
+      
       if (options) {
         await tx.quizOption.deleteMany({ where: { questionId: req.params.id } });
 
@@ -338,7 +338,7 @@ const updateQuestion = async (req, res, next) => {
   }
 };
 
-// ── 8. deleteQuestion ────────────────────────────────────────────
+
 
 const deleteQuestion = async (req, res, next) => {
   try {
@@ -366,7 +366,7 @@ const deleteQuestion = async (req, res, next) => {
   }
 };
 
-// ── 9. reorderQuestions ──────────────────────────────────────────
+
 
 const reorderQuestions = async (req, res, next) => {
   try {

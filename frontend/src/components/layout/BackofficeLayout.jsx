@@ -27,15 +27,15 @@ const BackofficeLayout = () => {
 
   return (
     <div className="flex h-screen bg-[#F4F5FF] font-inter overflow-hidden">
-      {/* Sidebar (Desktop) */}
+      {}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen w-60 bg-white border-r border-[#E5E7EB] z-20 flex-col">
-        {/* Top Logo */}
+        {}
         <div className="flex items-center gap-2 p-6">
           <GraduationCap className="w-8 h-8 text-[#2D31D4]" />
           <span className="text-xl font-bold font-plus-jakarta-sans tracking-tight text-[#2D31D4]">Learnova</span>
         </div>
 
-        {/* Nav Links */}
+        {}
         <nav className="flex-1 px-4 mt-2 space-y-1">
           {navLinks.map((link) => {
             const isActive = location.pathname.startsWith(link.path);
@@ -56,7 +56,7 @@ const BackofficeLayout = () => {
           })}
         </nav>
 
-        {/* Bottom Profile / Logout */}
+        {}
         <div className="absolute bottom-0 w-full border-t border-gray-200 p-4 bg-white">
           <div className="flex items-center mb-4">
             <div className="w-10 h-10 rounded-full bg-[#2D31D4] text-white flex items-center justify-center font-bold flex-shrink-0">
@@ -77,9 +77,9 @@ const BackofficeLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {}
       <div className="flex-1 md:ml-60 flex flex-col h-screen overflow-hidden">
-        {/* Topbar */}
+        {}
         <header className="sticky top-0 bg-white border-b border-gray-200 h-14 flex items-center justify-between px-6 z-40">
           <h1 className="text-[18px] font-bold text-gray-900 font-plus-jakarta-sans">{pageTitle}</h1>
           
@@ -114,12 +114,12 @@ const BackofficeLayout = () => {
           </div>
         </header>
 
-        {/* Page Content */}
+        {}
         <main className="flex-1 overflow-auto p-4 md:p-6 mb-16 md:mb-0">
           <Outlet />
         </main>
 
-        {/* Bottom Navigation (Mobile) */}
+        {}
         <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 z-50 flex justify-around items-center h-16 pb-safe">
           {navLinks.map((link) => {
             const isActive = location.pathname.startsWith(link.path);

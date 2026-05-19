@@ -1,21 +1,21 @@
 const prisma = require('../config/db');
 
-// ── 1. getReportingData ──────────────────────────────────────────
+
 
 const getReportingData = async (req, res, next) => {
   try {
     const { courseId, status, search } = req.query;
 
-    // Build the query where clause
+    
     const where = {};
     const courseWhere = {};
 
-    // Filter by instructor if not admin
+    
     if (req.user.role === 'instructor') {
       courseWhere.responsibleId = req.user.id;
     }
 
-    // Optional filters
+    
     if (courseId) {
       where.courseId = courseId;
     }
@@ -26,12 +26,12 @@ const getReportingData = async (req, res, next) => {
       where.user = { name: { contains: search, mode: 'insensitive' } };
     }
 
-    // Merge nested course filter if instructor
+    
     if (req.user.role === 'instructor') {
       where.course = { ...courseWhere };
     }
 
-    // Fetch filtered enrollments mapping to vw_reporting
+    
     const enrollments = await prisma.enrollment.findMany({
       where,
       include: {
@@ -42,7 +42,7 @@ const getReportingData = async (req, res, next) => {
       orderBy: { enrolledAt: 'desc' },
     });
 
-    // Formatting raw data rows
+    
     const rows = enrollments.map((e) => {
       const totalLessons = e.course?.lessons.length || 0;
       const completedLessons = e.lessonProgress.filter((lp) => lp.isCompleted).length;
@@ -65,10 +65,10 @@ const getReportingData = async (req, res, next) => {
       };
     });
 
-    // Overall summary without the optional filters
+    
     const summaryWhere = req.user.role === 'instructor' ? { course: { responsibleId: req.user.id } } : {};
     
-    // Manual groupBy equivalent
+    
     const allEnrs = await prisma.enrollment.findMany({
       where: summaryWhere,
       select: { status: true },
@@ -90,13 +90,13 @@ const getReportingData = async (req, res, next) => {
   }
 };
 
-// ── 2. getCourseStats ────────────────────────────────────────────
+
 
 const getCourseStats = async (req, res, next) => {
   try {
     const { courseId } = req.params;
 
-    // Verify access
+    
     const course = await prisma.course.findUnique({ where: { id: courseId } });
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
@@ -107,7 +107,7 @@ const getCourseStats = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access forbidden' });
     }
 
-    // 1. Enrollment stats
+    
     const allEnrs = await prisma.enrollment.findMany({
       where: { courseId },
       include: {
@@ -118,7 +118,7 @@ const getCourseStats = async (req, res, next) => {
     const totalEnrolled = allEnrs.length;
     let completedCount = 0;
 
-    // Find course total lessons to compute dynamic completion rate
+    
     const lessonsCount = await prisma.lesson.count({ where: { courseId } });
 
     allEnrs.forEach((e) => {
@@ -129,7 +129,7 @@ const getCourseStats = async (req, res, next) => {
 
     const completionRate = totalEnrolled > 0 ? Math.round((completedCount / totalEnrolled) * 100) : 0;
 
-    // 2. Avg quiz score
+    
     const quizzes = await prisma.quiz.findMany({ where: { courseId }, select: { id: true } });
     const quizIds = quizzes.map((q) => q.id);
 
@@ -142,7 +142,7 @@ const getCourseStats = async (req, res, next) => {
       avgQuizScore = attemptAgg._avg.correctAnswers ? parseFloat(attemptAgg._avg.correctAnswers.toFixed(2)) : 0;
     }
 
-    // 3. Ratings (Reviews)
+    
     const reviewAgg = await prisma.review.aggregate({
       where: { courseId },
       _avg: { rating: true },

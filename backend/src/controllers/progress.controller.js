@@ -5,14 +5,14 @@ const {
   syncEnrollmentCourseProgress,
 } = require('../utils/courseProgress');
 
-// ── 1. completeLesson ────────────────────────────────────────────
+
 
 const completeLesson = async (req, res, next) => {
   try {
     const { lessonId } = req.params;
     const userId = req.user.id;
 
-    // Find lesson and ensure user is enrolled in its course
+    
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
     });
@@ -40,7 +40,7 @@ const completeLesson = async (req, res, next) => {
 
     const enrollmentId = enrollment.id;
 
-    // Mark as completed using Prisma upsert (equivalent to fn_complete_lesson)
+    
     const result = await prisma.$transaction(async (tx) => {
       await tx.lessonProgress.upsert({
         where: { userId_lessonId: { userId, lessonId } },
@@ -75,7 +75,7 @@ const completeLesson = async (req, res, next) => {
   }
 };
 
-// ── 2. getCourseProgress ─────────────────────────────────────────
+
 
 const getCourseProgress = async (req, res, next) => {
   try {
@@ -117,7 +117,7 @@ const getCourseProgress = async (req, res, next) => {
 
     const snapshot = getCourseProgressSnapshot(enrollment);
 
-    // Map lessons to frontend-expected shape
+    
     const lessons = enrollment.course.lessons.map((l) => ({
       id: l.id,
       title: l.title,

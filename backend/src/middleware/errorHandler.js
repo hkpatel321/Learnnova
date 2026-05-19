@@ -1,8 +1,5 @@
-/**
- * Global error-handling middleware (4-param signature).
- * Must be the LAST middleware registered on the Express app.
- */
-// eslint-disable-next-line no-unused-vars
+
+
 const errorHandler = (err, req, res, next) => {
   console.error('Unhandled error:', err.stack || err);
 

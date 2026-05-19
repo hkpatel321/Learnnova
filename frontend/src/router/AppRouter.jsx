@@ -1,14 +1,14 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 
-// Public Pages
+
 import LoginPage from '../pages/public/LoginPage';
 import RegisterPage from '../pages/public/RegisterPage';
 import ForgotPasswordPage from '../pages/public/ForgotPasswordPage';
 import ResetPasswordPage from '../pages/public/ResetPasswordPage';
 import InvitationAcceptPage from '../pages/public/InvitationAcceptPage';
 
-// Learner Pages
+
 import CourseCatalogPage from '../pages/public/CourseCatalogPage';
 import MyCoursesPage from '../pages/learner/MyCoursesPage';
 import CourseDetailPage from '../pages/learner/CourseDetailPage';
@@ -16,7 +16,7 @@ import LessonPlayerPage from '../pages/learner/LessonPlayerPage';
 import ProfilePage from '../pages/learner/ProfilePage';
 import LearnerLayout from '../components/layout/LearnerLayout';
 
-// Instructor Pages
+
 import BackofficeLayout from '../components/layout/BackofficeLayout';
 import CoursesPage from '../pages/instructor/CoursesPage';
 import CourseFormPage from '../pages/instructor/CourseFormPage';
@@ -41,14 +41,14 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const AppRouter = () => {
   return (
     <Routes>
-      {/* Public Routes */}
+      {}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
 
-      {/* Learner Layout Routes */}
+      {}
       <Route element={<LearnerLayout />}>
         <Route path="/courses" element={<CourseCatalogPage />} />
         <Route
@@ -81,7 +81,7 @@ const AppRouter = () => {
         />
       </Route>
 
-      {/* Instructor / Admin — BackofficeLayout */}
+      {}
       <Route
         element={
           <ProtectedRoute allowedRoles={['instructor', 'admin']}>
@@ -95,7 +95,7 @@ const AppRouter = () => {
         <Route path="/backoffice/reporting" element={<ReportingPage />} />
       </Route>
 
-      {/* Default route / redirects */}
+      {}
       <Route path="/" element={<Navigate to="/courses" replace />} />
       
       <Route path="*" element={<NotFoundPage />} />

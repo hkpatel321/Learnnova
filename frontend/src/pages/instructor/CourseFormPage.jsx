@@ -25,7 +25,7 @@ const CourseFormPage = () => {
   const { user } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState('content');
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'unsaved'
+  const [saveStatus, setSaveStatus] = useState('saved'); 
   const [formData, setFormData] = useState({
     title: '',
     tags: [],
@@ -38,7 +38,7 @@ const CourseFormPage = () => {
   });
   const [tagInput, setTagInput] = useState('');
   
-  // Modals state
+  
   const [isAddAttendeesOpen, setIsAddAttendeesOpen] = useState(false);
   const [attendeeEmails, setAttendeeEmails] = useState('');
   
@@ -47,12 +47,12 @@ const CourseFormPage = () => {
   const [contactMessage, setContactMessage] = useState('');
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
 
-  // Fetch course data
+  
   const { data: course, isLoading } = useQuery({
     queryKey: ['course', courseId],
     queryFn: async () => {
-      // In a real scenario, this would fetch from /api/courses/${courseId}
-      // Assuming successful response maps properly:
+      
+      
       try {
            const response = await axios.get(`/courses/${courseId}`);
            const courseData = response.data?.data?.course || response.data?.course || response.data;
@@ -78,7 +78,7 @@ const CourseFormPage = () => {
       }
     },
     onSuccess: (data) => {
-      // Initialize form data
+      
       setFormData({
         title: data.title || '',
         tags: data.tags || [],
@@ -92,7 +92,7 @@ const CourseFormPage = () => {
     }
   });
   
-  // Initialize form when course data loads via useQuery (React Query v5 standard approach)
+  
   useEffect(() => {
     if (course) {
         setFormData({
@@ -153,7 +153,7 @@ const CourseFormPage = () => {
     ];
   }, [user, users]);
 
-  // Auto-save mutation
+  
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       const payload = {
@@ -176,16 +176,16 @@ const CourseFormPage = () => {
     }
   });
 
-  // Debounced save
+  
   const debouncedSave = useMemo(
     () => debounce((data) => {
       saveMutation.mutate(data);
     }, 1500),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
     [courseId]
   );
 
-  // Handle form changes
+  
   const handleChange = (field, value) => {
     const updatedData = { ...formData, [field]: value };
     setFormData(updatedData);
@@ -199,7 +199,7 @@ const CourseFormPage = () => {
     }
   };
 
-  // Tag Handling
+  
   const handleAddTag = (e) => {
     if (e.key === 'Enter' && tagInput.trim()) {
       e.preventDefault();
@@ -214,7 +214,7 @@ const CourseFormPage = () => {
     handleChange('tags', formData.tags.filter(tag => tag !== tagToRemove));
   };
 
-  // Publish toggle
+  
   const publishMutation = useMutation({
     mutationFn: async (isPublishing) => {
       return axios.patch(`/courses/${courseId}/publish`, { published: isPublishing });
@@ -241,11 +241,11 @@ const CourseFormPage = () => {
       await saveMutation.mutateAsync(latestFormData);
       publishMutation.mutate(!course?.published);
     } catch {
-      // saveMutation already surfaces the specific error message
+      
     }
   };
 
-  // Image Upload
+  
   const uploadCoverMutation = useMutation({
     mutationFn: async (file) => {
       const formDataUpload = new FormData();
@@ -281,7 +281,7 @@ const CourseFormPage = () => {
     }
   };
 
-  // Modals Submit Handlers
+  
   const addAttendeesMutation = useMutation({
     mutationFn: async (emails) => {
       return axios.post(`/courses/${courseId}/attendees`, { emails: emails.split(/[\n,]+/).map(e => e.trim()).filter(Boolean) });
@@ -321,7 +321,7 @@ const CourseFormPage = () => {
 
   return (
     <div className="pb-20">
-      {/* Sticky Header */}
+      {}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 border-b border-gray-200 px-4 md:px-6 py-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between shadow-sm">
         <div className="flex min-w-0 items-center gap-3 md:gap-4 flex-1">
           <button 
@@ -385,7 +385,7 @@ const CourseFormPage = () => {
         </div>
       </div>
 
-      {/* Cover Image Area */}
+      {}
       <div className="px-6 py-6 max-w-7xl mx-auto">
         <div 
           className={`relative w-full h-48 rounded-xl overflow-hidden group cursor-pointer transition-all ${
@@ -397,45 +397,9 @@ const CourseFormPage = () => {
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept="image/*"
-            onChange={handleImageUpload}
-          />
-          
-          {uploadCoverMutation.isPending ? (
-             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm z-10">
-               <Loader2 className="w-8 h-8 text-[#2D31D4] animate-spin mb-2" />
-               <span className="text-sm font-medium text-gray-700">Uploading...</span>
-             </div>
-          ) : coverImageSrc && !coverLoadFailed ? (
-            <>
-              <img
-                src={coverImageSrc}
-                alt="Cover"
-                className="w-full h-full object-cover"
-                onError={() => setCoverLoadFailed(true)}
-              />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <span className="text-white font-medium flex items-center gap-2">
-                  <Upload className="w-5 h-5" />
-                  Change Image
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-[#2D31D4]">
-              <div className="w-12 h-12 rounded-full bg-white/60 flex items-center justify-center mb-3 shadow-sm">
-                <Upload className="w-6 h-6" />
-              </div>
-              <span className="font-medium">Click to upload cover image</span>
-              <span className="text-xs opacity-70 mt-1">1920x1080 recommended</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Course Fields */}
+            accept="image}
       <div className="px-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-6">
-        {/* Col 1 */}
+        {}
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -495,7 +459,7 @@ const CourseFormPage = () => {
           </div>
         </div>
 
-        {/* Col 2 */}
+        {}
         <div className="space-y-6">
            <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Responsible User</label>
@@ -553,7 +517,7 @@ const CourseFormPage = () => {
               </label>
             </div>
 
-            {/* Expandable Price Input */}
+            {}
             <div className={`mt-3 overflow-hidden transition-all duration-300 ${formData.accessRule === 'payment' ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
               <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
               <div className="relative">
@@ -650,7 +614,7 @@ const CourseFormPage = () => {
         </div>
       </div>
 
-      {/* Tabs Menu */}
+      {}
       <div className="px-6 max-w-7xl mx-auto mt-10">
         <div className="flex items-center gap-6 md:gap-8 border-b border-gray-200 overflow-x-auto whitespace-nowrap pb-1 scrollbar-hide">
           {[
@@ -673,7 +637,7 @@ const CourseFormPage = () => {
           ))}
         </div>
 
-        {/* Tab Panels */}
+        {}
         <div className="py-6">
           {activeTab === 'content' && <LessonsTab courseId={courseId} />}
           
@@ -743,7 +707,7 @@ const CourseFormPage = () => {
         </div>
       </div>
 
-      {/* Modals */}
+      {}
       <Modal open={isAddAttendeesOpen} onOpenChange={setIsAddAttendeesOpen} title="Add Attendees">
         <form onSubmit={(e) => { e.preventDefault(); addAttendeesMutation.mutate(attendeeEmails); }}>
           <div className="space-y-4">

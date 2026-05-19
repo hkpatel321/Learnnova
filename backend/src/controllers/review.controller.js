@@ -1,7 +1,7 @@
 const prisma = require('../config/db');
 const { getLearnerCourseAccess } = require('../utils/learnerAccess');
 
-// ── 1. addOrUpdateReview ─────────────────────────────────────────
+
 
 const addOrUpdateReview = async (req, res, next) => {
   try {
@@ -20,7 +20,7 @@ const addOrUpdateReview = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Rating must be an integer between 1 and 5' });
     }
 
-    // Check if course exists
+    
     const course = await prisma.course.findUnique({ where: { id: courseId } });
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
@@ -35,7 +35,7 @@ const addOrUpdateReview = async (req, res, next) => {
       });
     }
 
-    // Upsert review
+    
     const review = await prisma.review.upsert({
       where: { userId_courseId: { userId, courseId } },
       update: {
@@ -80,7 +80,7 @@ const addOrUpdateReview = async (req, res, next) => {
   }
 };
 
-// ── 2. getCourseReviews ──────────────────────────────────────────
+
 
 const getCourseReviews = async (req, res, next) => {
   try {
@@ -91,7 +91,7 @@ const getCourseReviews = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    // Fetch aggregate rating and count
+    
     const agg = await prisma.review.aggregate({
       where: { courseId },
       _avg: { rating: true },
@@ -101,7 +101,7 @@ const getCourseReviews = async (req, res, next) => {
     const avgRating = agg._avg.rating ? parseFloat(agg._avg.rating.toFixed(2)) : 0;
     const reviewCount = agg._count.id;
 
-    // Fetch review list
+    
     const reviews = await prisma.review.findMany({
       where: { courseId },
       include: {

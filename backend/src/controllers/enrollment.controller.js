@@ -3,9 +3,9 @@ const { v4: uuidv4 } = require('uuid');
 const { sendCourseContactEmail, sendCourseInvitationEmail } = require('../utils/mailer');
 const { ensureCourseLearnerLink } = require('../utils/courseLearner');
 
-// ── helpers ──────────────────────────────────────────────────────
 
-/** Verify course access for instructor/admin operations */
+
+
 const verifyCourseAccess = async (courseId, user) => {
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course) return { error: 'Course not found', status: 404 };
@@ -15,7 +15,7 @@ const verifyCourseAccess = async (courseId, user) => {
   return { course };
 };
 
-// ── 1. enrollInCourse ────────────────────────────────────────────
+
 
 const enrollInCourse = async (req, res, next) => {
   try {
@@ -27,7 +27,7 @@ const enrollInCourse = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    // Check if already enrolled
+    
     const existingEnrollment = await prisma.enrollment.findUnique({
       where: { userId_courseId: { userId, courseId } },
     });
@@ -36,7 +36,7 @@ const enrollInCourse = async (req, res, next) => {
       return res.json({ success: true, data: { enrollment: existingEnrollment } });
     }
 
-    // Validate access rules
+    
     if (course.accessRule === 'invitation') {
       const invitation = await prisma.courseInvitation.findUnique({
         where: { courseId_email: { courseId, email: req.user.email } },
@@ -64,7 +64,7 @@ const enrollInCourse = async (req, res, next) => {
       }
     }
 
-    // Enroll the user
+    
     const enrollment = await prisma.enrollment.create({
       data: {
         userId,
@@ -84,20 +84,20 @@ const enrollInCourse = async (req, res, next) => {
   }
 };
 
-// ── 2. getMyEnrollments ──────────────────────────────────────────
+
 
 const getMyEnrollments = async (req, res, next) => {
   try {
-    // In PostgreSQL, to get progress stats efficiently we do a complex query.
-    // Since we don't have a vw_course_progress view yet in Prisma, we'll
-    // construct it via $queryRaw to mimic the requested SELECT * FROM vw_course_progress.
-    // For simplicity with Prisma types, we'll fetch the enrollments + nested course
-    // and aggregate lesson progress via Prisma OR we can run raw SQL. Let's run a robust Raw SQL.
+    
+    
+    
+    
+    
 
     const userId = req.user.id;
 
-    // We'll calculate progress manually or via DB. For now, let's use Prisma to fetch relations
-    // and compute progress locally.
+    
+    
     const enrollments = await prisma.enrollment.findMany({
       where: { userId },
       include: {
@@ -146,7 +146,7 @@ const getMyEnrollments = async (req, res, next) => {
   }
 };
 
-// ── 3. getEnrollmentById ─────────────────────────────────────────
+
 
 const getEnrollmentById = async (req, res, next) => {
   try {
@@ -165,7 +165,7 @@ const getEnrollmentById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Enrollment not found' });
     }
 
-    // Access control: learner (own) or instructor(own) or admin
+    
     if (req.user.role === 'learner' && enrollment.userId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Access forbidden' });
     }
@@ -182,7 +182,7 @@ const getEnrollmentById = async (req, res, next) => {
   }
 };
 
-// ── 4. addAttendees ──────────────────────────────────────────────
+
 
 const addAttendees = async (req, res, next) => {
   try {
@@ -214,14 +214,14 @@ const addAttendees = async (req, res, next) => {
     let emailsSent = 0;
     const emailFailures = [];
 
-    // Expire invitations in 7 days
+    
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     for (const email of emails) {
       const lowerEmail = email.toLowerCase().trim();
 
-      // Check if already invited OR enrolled
+      
       const existingInvitation = await prisma.courseInvitation.findUnique({
         where: { courseId_email: { courseId, email: lowerEmail } },
       });
@@ -231,7 +231,7 @@ const addAttendees = async (req, res, next) => {
         continue;
       }
 
-      // See if user exists
+      
       const user = await prisma.user.findUnique({ where: { email: lowerEmail } });
 
       const token = uuidv4();
@@ -252,7 +252,7 @@ const addAttendees = async (req, res, next) => {
         });
 
         if (user) {
-          // Auto enroll if user exists
+          
           const exists = await tx.enrollment.findUnique({
             where: { userId_courseId: { userId: user.id, courseId } },
           });
@@ -297,7 +297,7 @@ const addAttendees = async (req, res, next) => {
   }
 };
 
-// ── 5. getAttendees ──────────────────────────────────────────────
+
 
 const getAttendees = async (req, res, next) => {
   try {
@@ -419,14 +419,14 @@ const contactAttendees = async (req, res, next) => {
   }
 };
 
-// ── 6. acceptInvitation ──────────────────────────────────────────
+
 
 const acceptInvitation = async (req, res, next) => {
   try {
     const { token } = req.params;
     const userId = req.user.id;
 
-    // Find valid invitation
+    
     const invitation = await prisma.courseInvitation.findUnique({
       where: { token },
     });
@@ -450,7 +450,7 @@ const acceptInvitation = async (req, res, next) => {
       });
     }
 
-    // Transaction: mark accepted + enroll
+    
     const enrollment = await prisma.$transaction(async (tx) => {
       await tx.courseInvitation.update({
         where: { id: invitation.id },
@@ -461,7 +461,7 @@ const acceptInvitation = async (req, res, next) => {
         },
       });
 
-      // Insert enrollment if not exists
+      
       let enr = await tx.enrollment.findUnique({
         where: { userId_courseId: { userId, courseId: invitation.courseId } },
       });
