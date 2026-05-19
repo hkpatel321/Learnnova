@@ -419,7 +419,7 @@ const uploadCoverImage = async (req, res, next) => {
       });
     }
 
-    const coverImageUrl = `/uploads/${req.file.filename}`;
+    const coverImageUrl = req.file.path;
 
     await prisma.course.update({
       where: { id: req.params.id },

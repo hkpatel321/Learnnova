@@ -203,7 +203,7 @@ const updateLesson = async (req, res, next) => {
     }
 
     if (req.file) {
-      data.fileUrl = `/uploads/${req.file.filename}`;
+      data.fileUrl = req.file.path;
     }
 
     if (nextLessonType !== 'video') {
@@ -265,7 +265,7 @@ const uploadLessonFile = async (req, res, next) => {
     const updated = await prisma.lesson.update({
       where: { id: req.params.id },
       data: {
-        fileUrl: `/uploads/${req.file.filename}`,
+        fileUrl: req.file.path,
         lessonType: 'document',
         videoUrl: null,
         durationMins: null,
@@ -296,7 +296,7 @@ const uploadLessonImage = async (req, res, next) => {
     const updated = await prisma.lesson.update({
       where: { id: req.params.id },
       data: {
-        fileUrl: `/uploads/${req.file.filename}`,
+        fileUrl: req.file.path,
         lessonType: 'image',
         videoUrl: null,
         durationMins: null,
@@ -379,7 +379,7 @@ const addAttachment = async (req, res, next) => {
     let { url } = req.body;
 
     if (req.file) {
-      url = `/uploads/${req.file.filename}`;
+      url = req.file.path;
     }
 
     if (!url) {
